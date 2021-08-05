@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  etcd:
+    image: bitnami/etcd:3
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+    ports:
+      - 2379:2379
+      - 2380:2380
+  smartassistant:
+    image: smartassistant
+    ports:
+      - "8088:8088"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      #      - ../../sadb.db:/app/sadb.db # 如果要挂载到容器里面的话需要先在本地创建db文件
+      - ../../app.yaml:/app/app.yaml
+      - ../../plugins.json:/app/plugins.json
+    depends_on:
+      - etcd

@@ -1,0 +1,148 @@
+package entity
+
+import (
+	"github.com/stretchr/testify/assert"
+	"github.com/zhiting-tech/smartassistant/internal/types"
+	"testing"
+)
+
+func TestAddDevice(t *testing.T) {
+	ast := assert.New(t)
+
+	var testSADevice = Device{
+		ID:         1,
+		Identity:   "666",
+		Model:      types.SaModel,
+		PluginID:   "1",
+		LocationID: 1,
+		CreatorID:  1,
+	}
+
+	var testDevice2 = Device{
+		ID:         2,
+		Identity:   "678",
+		LocationID: 1,
+		CreatorID:  2,
+	}
+
+	var errorIdentityDevice = Device{
+		ID:         3,
+		Identity:   "666",
+		LocationID: 1,
+		CreatorID:  2,
+	}
+
+	err := AddDevice(&testSADevice, GetDB())
+	ast.NoError(err, "add device error: %v", err)
+
+	err = AddDevice(&testDevice2, GetDB())
+	ast.NoError(err, "add device error: %v", err)
+
+	err = AddDevice(&testSADevice, GetDB())
+	ast.Error(err, "add exist device error")
+
+	err = AddDevice(&errorIdentityDevice, GetDB())
+	ast.Error(err, "add error device error")
+}
+
+func TestCheckSaDeviceCreator(t *testing.T) {
+	ast := assert.New(t)
+
+	err := CheckSaDeviceCreator(1)
+	ast.NoError(err, "check sa device creator error: %v", err)
+	//err = CheckSaDeviceCreator(2)
+	//ast.Error(err, "check sa device creator error")
+}
+
+func TestIsSACreator(t *testing.T) {
+	ast := assert.New(t)
+
+	ok := IsSACreator(1)
+	ast.True(ok, "is Sa Creator error")
+
+	ok = IsSACreator(2)
+	ast.False(ok, "is Sa Creator error")
+}
+
+func TestGetDevice(t *testing.T) {
+	ast := assert.New(t)
+
+	const noExistDeviceID = 999
+	const noExistIdentity = "999"
+
+	devices, err := GetDevices()
+	ast.NoError(err, "get devices error: %v", err)
+	ast.NotEmpty(devices)
+
+	device, err := GetSaDevice()
+	ast.NoError(err, "get sa device error: %v", err)
+	ast.NotEmpty(device)
+
+	device, err = GetDeviceByID(1)
+	ast.NoError(err, "get device by id error: %v", err)
+	ast.NotEmpty(device)
+	device, err = GetDeviceByID(noExistDeviceID)
+	ast.Error(err, "get device by id error")
+	ast.Empty(device)
+
+	devices, err = GetDevicesByLocationID(1)
+	ast.NoError(err, "get devices by location id: %v", err)
+	ast.NotEmpty(devices)
+
+	device, err = GetDeviceByIdentity("666")
+	ast.NoError(err, "get device by id error: %v", err)
+	ast.NotEmpty(device)
+	device, err = GetDeviceByIdentity(noExistIdentity)
+	ast.Error(err, "get device by id error")
+	ast.Empty(device)
+}
+
+func TestUpdateDevice(t *testing.T) {
+	ast := assert.New(t)
+
+	const noExistDeviceID = 999
+	const newCreatorID = 2
+
+	var updateDevice = Device{
+		ID:         2,
+		Identity:   "678",
+		LocationID: 1,
+		CreatorID:  newCreatorID,
+	}
+
+	err := UpdateDevice(updateDevice.ID, updateDevice)
+	ast.NoError(err, "update device error: %v", err)
+	device, _ := GetDeviceByID(updateDevice.ID)
+	ast.Equal(device.CreatorID, newCreatorID)
+
+	err = UpdateDevice(noExistDeviceID, updateDevice)
+	ast.Error(err, "update device error")
+}
+
+func TestUnBindLocationDevice(t *testing.T) {
+	ast := assert.New(t)
+
+	err := UnBindLocationDevice(1)
+	ast.NoError(err, "unbind location device error: %v", err)
+	device, _ := GetDeviceByID(1)
+	ast.Equal(device.LocationID, 0)
+
+	err = UnBindLocationDevices(1)
+	ast.NoError(err, "unbind location device error: %v", err)
+	device, _ = GetDeviceByID(2)
+	ast.Equal(device.LocationID, 0)
+}
+
+func TestDelDevice(t *testing.T) {
+	ast := assert.New(t)
+
+	err := DelDeviceByID(2)
+	ast.NoError(err, "delete device by id error: %v", err)
+	device, _ := GetDeviceByID(2)
+	ast.Empty(device)
+
+	err = DelDevicesByPlgID("1")
+	ast.NoError(err, "delete device by plugin id error: %v", err)
+	device, _ = GetDeviceByID(1)
+	ast.Empty(device)
+}

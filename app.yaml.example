@@ -1,2 +1,17 @@
-driver: sqlite3
-name: smartassistent
+debug: true
+smartcloud:
+    domain: ""
+    tls: false
+
+smartassistant:
+    id: "demo-sa"
+    key: "aGVsbG93b3JsZA"
+    db: "sadb.db"
+    host: 0.0.0.0
+    port: 8088
+    grpc_port: 9234
+
+docker:
+    server: ""
+    username: ""
+    password: ""
