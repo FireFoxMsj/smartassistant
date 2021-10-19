@@ -1,7 +1,7 @@
 package device
 
 import (
-	"github.com/sirupsen/logrus"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
@@ -15,6 +15,10 @@ type Device struct {
 	model        string
 	manufacturer string
 	ch           server.WatchChan
+}
+
+func (d *Device) Online() bool {
+	return true
 }
 
 func (d *Device) Identity() string {
@@ -43,7 +47,7 @@ func (d *Device) update(attr string) attribute.UpdateFunc {
 		default:
 		}
 
-		logrus.Debug("notify:", n)
+		logger.Debug("notify:", n)
 
 		return nil
 	}
@@ -96,9 +100,24 @@ func (d Device) Info() server.DeviceInfo {
 }
 
 func NewDemo(identity string) *Device {
+
+	lightBulb := instance.LightBulb{
+		Power:      attribute.NewPower(),
+		ColorTemp:  instance.NewColorTemp(),
+		Brightness: instance.NewBrightness(),
+	}
+
+	info := instance.Info{
+		Name:         attribute.NewName(),
+		Identity:     attribute.NewIdentity(),
+		Model:        attribute.NewModel(),
+		Manufacturer: attribute.NewManufacturer(),
+		Version:      attribute.NewVersion(),
+	}
+
 	d := Device{
-		LightBulb:    instance.NewLightBulb(),
-		Info0:        instance.NewInfo(),
+		LightBulb:    lightBulb,
+		Info0:        info,
 		identity:     identity,
 		model:        "M1",
 		manufacturer: "zhiting",

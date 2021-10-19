@@ -106,7 +106,7 @@ func ExecCmdPower(cli proto.PluginClient, d *Device, onOff string) {
 	}
 	data, _ := json.Marshal(args)
 	_, err := cli.SetAttributes(context.Background(), &proto.SetAttributesReq{
-		d.identity, data,
+		Identity: d.identity, Data: data,
 	})
 	if err != nil {
 		log.Panicln(err)

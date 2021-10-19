@@ -2,79 +2,105 @@ package sdk
 
 import (
 	"context"
-	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
-	"sync"
+	"strings"
 	"syscall"
-	"time"
 
-	"github.com/micro/go-micro/v2"
-	"github.com/micro/go-micro/v2/registry"
-	"github.com/micro/go-micro/v2/registry/etcd"
-	"github.com/micro/go-micro/v2/web"
 	"github.com/sirupsen/logrus"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/proto"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
+	addr2 "github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/utils/addr"
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/utils/registry"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 )
-
-const registerTTL = time.Second * 10
-const registerInterval = time.Second * 5
 
 func Run(p *server.Server) error {
 
-	r := etcd.NewRegistry(
-		registry.Addrs("0.0.0.0:2379"),
-		registry.Timeout(10*time.Second),
-	)
-
 	ctx, cancel := context.WithCancel(context.Background())
 
-	var wg sync.WaitGroup
-	wg.Add(2)
 	go func() {
-		RunGrpcServer(ctx, r, p.Domain, p)
-		wg.Done()
-	}()
-	go func() {
-		RunWebServer(ctx, r, p.Domain, p)
-		wg.Done()
-	}()
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-
-	select {
-	case <-sig:
-		// Exit by user
-		devices, _ := p.Manager.Devices()
-		for _, d := range devices {
-			d.Close()
+		select {
+		case <-sig:
+			devices, _ := p.Manager.Devices()
+			for _, d := range devices {
+				d.Close()
+			}
+			cancel()
 		}
-		cancel()
-		wg.Wait()
+	}()
+
+	if err := runServer(ctx, p); err != nil {
+		logrus.Error(err)
 	}
 	logrus.Info("shutting down.")
 	return nil
 }
 
-func RunGrpcServer(ctx context.Context, r registry.Registry, domain string, p *server.Server) {
-
-	s := micro.NewService(micro.Context(ctx), micro.Registry(r), micro.Name(domain),
-		micro.RegisterTTL(registerTTL), micro.RegisterInterval(registerInterval))
-	proto.RegisterPluginHandler(s.Server(), p)
-	if err := s.Run(); err != nil {
-		log.Println(err)
+// mixHandler 同时处理http和grpc请求
+func mixHandler(mux *http.ServeMux, grpcServer *grpc.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor != 2 {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		if strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+			return
+		}
+		return
 	}
 }
 
-func RunWebServer(ctx context.Context, r registry.Registry, domain string, p *server.Server) {
+func runServer(ctx context.Context, p *server.Server) error {
 
-	ws := web.NewService(web.Context(ctx), web.Registry(r), web.Name(domain+".http"),
-		web.RegisterTTL(registerTTL), web.RegisterInterval(registerInterval))
-	ws.Handle("/", p.Router)
-
-	if err := ws.Run(); err != nil {
-		log.Println(err)
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return err
 	}
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			ln.Close()
+		}
+	}()
+
+	localIP, err := addr2.LocalIP()
+	if err != nil {
+		return err
+	}
+	addr := net.TCPAddr{
+		IP:   net.ParseIP(localIP),
+		Port: ln.Addr().(*net.TCPAddr).Port,
+	}
+	// 往etcd注册服务
+	if err := registry.RegisterService(ctx, p.Domain, addr.String()); err != nil {
+		return err
+	}
+	defer registry.UnregisterService(p.Domain)
+
+	// grpc服务
+	grpcServer := grpc.NewServer()
+	proto.RegisterPluginServer(grpcServer, p)
+
+	// http服务
+	mux := http.NewServeMux()
+	mux.Handle("/", p.Router)
+
+	// h2c实现了不用tls的http/2
+	h1s := http.Server{
+		Handler: h2c.NewHandler(mixHandler(mux, grpcServer), &http2.Server{}),
+	}
+	if err = h1s.Serve(ln); err != nil {
+		logrus.Error(err)
+	}
+	return nil
 }

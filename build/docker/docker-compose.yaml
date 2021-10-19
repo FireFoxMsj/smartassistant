@@ -8,14 +8,37 @@ services:
     ports:
       - 2379:2379
       - 2380:2380
+
+  fluentd:
+    image: fluent/fluentd:v1.13
+    environment:
+      - FLUENTD_CONF=fluentd.conf
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - ../../fluentd.conf:/fluentd/etc/fluentd.conf
+
   smartassistant:
     image: smartassistant
     ports:
-      - "8088:8088"
+      - "37965:37965"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24224"
+        tag: smartassistant.main
+        fluentd-async-connect: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      #      - ../../sadb.db:/app/sadb.db # 如果要挂载到容器里面的话需要先在本地创建db文件
+      # - ../../data/sadb.db:/app/data/sadb.db # 如果要挂载到容器里面的话需要先在本地创建db文件
       - ../../app.yaml:/app/app.yaml
       - ../../plugins.json:/app/plugins.json
+      - type: bind
+        bind:
+          propagation: shared
+        source: /mnt/data/zt-smartassistant/data/
+        target: /mnt/data/zt-smartassistant/data/
     depends_on:
       - etcd
+      - fluentd

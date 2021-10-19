@@ -3,12 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
 )
 
 const (
@@ -23,14 +23,14 @@ func getCodeSlice() (codeSlice []int) {
 	var rootPath = "./internal/types/status"
 	file, err := os.Open(rootPath)
 	if err != nil {
-		log.Panicf("open http dir err: %v", err)
+		logger.Panicf("open http dir err: %v", err)
 	}
 
 	defer file.Close()
 
 	fileInfos, err := file.Readdir(-1)
 	if err != nil {
-		log.Panicf("readDir err:%v", err)
+		logger.Panicf("readDir err:%v", err)
 	}
 
 	for _, fileInfo := range fileInfos {
@@ -41,7 +41,7 @@ func getCodeSlice() (codeSlice []int) {
 				continue
 			}
 
-			log.Panicf("open path err:%s", err)
+			logger.Panicf("open path err:%s", err)
 		}
 
 		var count int
@@ -70,7 +70,7 @@ func writeCodeFile() {
 	errorSlice := getCodeSlice()
 	file, err := os.Create("./error.md")
 	if err != nil {
-		log.Panicf("create file err:%v", err)
+		logger.Panicf("create file err:%v", err)
 	}
 
 	defer file.Close()

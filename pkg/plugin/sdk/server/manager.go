@@ -2,12 +2,12 @@ package server
 
 import (
 	"errors"
-	"log"
-	"sync"
-
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/utils"
+	"log"
+	"sync"
 )
 
 type Manager struct {
@@ -21,9 +21,11 @@ func NewManager() *Manager {
 	return &Manager{}
 }
 
-func (p *Manager) init() {
+func (p *Manager) Init() {
 	p.notifyChans = make(map[chan Notify]struct{})
 	p.notifyChan = make(chan Notify, 10)
+
+	// 转发notifyChan消息到所有notifyChans
 	go func() {
 		for {
 			select {
@@ -56,6 +58,18 @@ func (p *Manager) setAttributeNotify(identity string) error {
 	}
 	return nil
 }
+
+// RemoveDevice 删除设备
+func (p *Manager) RemoveDevice(identity string) error {
+	v, loaded := p.devices.LoadAndDelete(identity)
+	if loaded {
+		device := v.(Device)
+		return device.Close()
+	}
+	return fmt.Errorf("device %s not found\n", identity)
+}
+
+// AddDevice 添加设备
 func (p *Manager) AddDevice(device Device) error {
 	if device == nil {
 		return errors.New("device is nil")
@@ -67,6 +81,7 @@ func (p *Manager) AddDevice(device Device) error {
 		return nil
 	}
 	if err := device.Setup(); err != nil {
+		logrus.Errorf("device setup err:%s", err.Error())
 		return err
 	}
 	logrus.Info("add device:", device.Info())
@@ -75,6 +90,14 @@ func (p *Manager) AddDevice(device Device) error {
 	return p.setAttributeNotify(device.Identity())
 }
 
+func (p *Manager) HealthCheck(identity string) bool {
+
+	device, ok := p.devices.Load(identity)
+	if !ok {
+		return false
+	}
+	return device.(Device).Online()
+}
 func (p *Manager) WatchNotify(device Device) {
 	s := utils.Parse(device)
 	ch := device.GetChannel()
@@ -167,6 +190,10 @@ func (p *Manager) getInstances(device Device) (instances []Instance) {
 		var attrs []Attribute
 		logrus.Debugf("total %d attrs of instance %d\n", len(ins.Attributes), ins.ID)
 		for _, attr := range ins.Attributes {
+			if attr == nil || !attr.Require && !attr.Active {
+				logrus.Debug("attr is nil or not active")
+				continue
+			}
 			a := Attribute{
 				ID:        attr.ID,
 				Attribute: attr.Name,

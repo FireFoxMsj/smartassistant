@@ -2,6 +2,7 @@ package rand
 
 import (
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -12,6 +13,7 @@ const (
 	KindAll   = KindNum | KindLower | KindUpper
 )
 
+var mu sync.Mutex
 var randSource *rand.Rand
 
 // 随机字符串
@@ -29,11 +31,13 @@ func StringK(size int, kind int) string {
 
 	result := make([]byte, size)
 	l := len(scope)
+	mu.Lock()
 	for i := 0; i < size; i++ {
 		index := randSource.Intn(l)
 		s, base := scope[index][0], scope[index][1]
 		result[i] = uint8(base + randSource.Intn(s))
 	}
+	mu.Unlock()
 	return string(result)
 }
 

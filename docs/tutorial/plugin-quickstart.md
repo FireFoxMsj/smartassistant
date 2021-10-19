@@ -17,7 +17,11 @@
 ```go
 package plugin
 
-import "github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
+import (
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
+)
 
 type Device struct {
 	Light instance.LightBulb
@@ -26,9 +30,21 @@ type Device struct {
 }
 
 func NewDevice() *Device {
+	// 定义属性
+	lightBulb := instance.LightBulb{
+		Power:     attribute.NewPower(),
+		ColorTemp: attribute.NewColorTemp(), // 根据需要初始化可选字段
+	}
+
+	info := instance.Info{
+		Identity:     attribute.NewIdentity(),
+		Model:        attribute.NewModel(),
+		Manufacturer: attribute.NewManufacturer(),
+		Version:      attribute.NewVersion(),
+	}
 	return &Device{
-		Light: instance.NewLightBulb(),
-		Info0: instance.NewInfo(),
+		Light: lightBulb,
+		Info0: info,
 	}
 }
 ```
@@ -40,27 +56,41 @@ func NewDevice() *Device {
 package plugin
 
 import (
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
 )
 
 type Device struct {
-	Light instance.LightBulb
-	Info0 instance.Info
+	LightBulb instance.LightBulb
+	Info0     instance.Info
 	// 根据实际设备功能组合定义
 	identity string
 	ch       server.WatchChan
 }
 
 func NewDevice() *Device {
+	// 定义设备属性
+	lightBulb := instance.LightBulb{
+		Power:     attribute.NewPower(),
+		ColorTemp: &attribute.ColorTemp{}, // 根据需要初始化可选字段
+	}
+
+	// 定义设备基础属性
+	info := instance.Info{
+		Name:         attribute.NewName(),
+		Identity:     attribute.NewIdentity(),
+		Model:        attribute.NewModel(),
+		Manufacturer: attribute.NewManufacturer(),
+		Version:      attribute.NewVersion(),
+	}
 	return &Device{
-		Light: instance.NewLightBulb(),
-		Info0: instance.NewInfo(),
-		ch:    make(server.WatchChan, 10),
+		LightBulb: lightBulb,
+		Info0:     info,
 	}
 }
 
-func (d *Device) Info() plugin.DeviceInfo {
+func (d *Device) Info() server.DeviceInfo {
 	// 该方法返回设备的主要信息
 	return d.identity
 }
@@ -73,6 +103,8 @@ func (d *Device) Setup() error {
 
 	d.LightBulb.Brightness.SetRange(1, 100)
 	d.LightBulb.ColorTemp.SetRange(1000, 5000)
+	
+	// 给属性设置更新函数，在执行命名时，该函数会被执行
 	d.LightBulb.Power.SetUpdateFunc(d.update("power"))
 	d.LightBulb.Brightness.SetUpdateFunc(d.update("brightness"))
 	d.LightBulb.ColorTemp.SetUpdateFunc(d.update("color_temp"))
@@ -93,7 +125,7 @@ func (d *Device) Close() error {
 	return nil
 }
 
-func (d *Device) GetChannel() plugin.WatchChan {
+func (d *Device) GetChannel() server.WatchChan {
 	// 返回WatchChan频道，用于状态变更推送
 	return d.ch
 }
@@ -109,11 +141,11 @@ import (
 	"log"
 
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
-	sdk "github.com/zhiting-tech/smartassistant/pkg/server/sdk"
+	"github.com/zhiting-tech/smartassistant/pkg/server/sdk"
 )
 
 func main() {
-	p := plugin.NewPluginServer("demo")
+	p := server.NewPluginServer("demo")
 	go func() {
 		// 发现设备
 		d := NewDevice()

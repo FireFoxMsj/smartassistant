@@ -19,6 +19,7 @@ type Device interface {
 	Identity() string
 	Info() DeviceInfo
 	Setup() error
+	Online() bool
 	Update() error
 	Close() error
 	GetChannel() WatchChan

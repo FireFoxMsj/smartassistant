@@ -1,0 +1,17 @@
+syntax = "proto3";
+package proto;
+option go_package = "github.com/zhiting-tech/smartassistant/modules/supervisor/proto";
+
+service Supervisor {
+  rpc Restart(RestartReq) returns(Response);
+}
+
+message RestartReq {
+  string Image = 1;
+  string NewImage = 2;
+}
+
+message Response {
+  int32 status = 1;
+  string reason = 2;
+}

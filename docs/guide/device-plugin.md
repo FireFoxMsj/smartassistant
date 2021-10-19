@@ -21,7 +21,10 @@ sdk中提供了预定义的设备模型，使用模型可以方便SA有效进行
 ```go
 package plugin
 
-import "github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
+import (
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
+)
 
 type Device struct {
 	Light instance.LightBulb
@@ -30,9 +33,25 @@ type Device struct {
 }
 
 func NewDevice() *Device {
+
+	// 定义属性
+	lightBulb := instance.LightBulb{
+		Power:      attribute.NewPower(),
+		ColorTemp:  attribute.NewColorTemp(), // 可选字段需要初始化才能使用
+		Brightness: nil,                      // 可选字段不初始化则不从接口中显示
+	}
+
+	// 定义设备基础属性
+	info := instance.Info{
+		Name:         attribute.NewName(),
+		Identity:     attribute.NewIdentity(),
+		Model:        attribute.NewModel(),
+		Manufacturer: attribute.NewManufacturer(),
+		Version:      attribute.NewVersion(),
+	}
 	return &Device{
-		Light: instance.NewLightBulb(),
-		Info0: instance.NewInfo(),
+		Light: lightBulb,
+		Info0: info,
 	}
 }
 ```
@@ -64,6 +83,7 @@ package plugin
 
 import (
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/instance"
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
 )
 
@@ -74,13 +94,27 @@ type Device struct {
 }
 
 func NewDevice() *Device {
+	// 定义属性
+	lightBulb := instance.LightBulb{
+		Power:      attribute.NewPower(),
+		ColorTemp:  attribute.NewColorTemp(), // 可选字段需要初始化才能使
+		Brightness: nil,                      // 可选字段不初始化则不从接口中显示
+	}
+
+	info := instance.Info{
+		Name:         attribute.NewName(),
+		Identity:     attribute.NewIdentity(),
+		Model:        attribute.NewModel(),
+		Manufacturer: attribute.NewManufacturer(),
+		Version:      attribute.NewVersion(),
+	}
 	return &Device{
-		Light: instance.NewLightBulb(),
-		Info0: instance.NewInfo(),
+		Light: lightBulb,
+		Info0: info,
 	}
 }
 
-func (d *Device) Info() plugin.DeviceInfo {
+func (d *Device) Info() server.DeviceInfo {
 	// 该方法返回设备的主要信息
 	panic("implement me")
 }
@@ -100,7 +134,7 @@ func (d *Device) Close() error {
 	panic("implement me")
 }
 
-func (d *Device) GetChannel() plugin.WatchChan {
+func (d *Device) GetChannel() server.WatchChan {
 	// 返回WatchChan频道，用于状态变更推送
 	panic("implement me")
 }
@@ -122,7 +156,7 @@ import (
 )
 
 func main() {
-	p := plugin.NewPluginServer("demo") // 插件服务名
+	p := server.NewPluginServer("demo") // 插件服务名
 	go func() {
 		// 发现设备，并将设备添加到manager中
 		d := NewDevice()

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/attribute"
 )
 
@@ -27,13 +28,14 @@ type Attribute struct {
 	Type      string
 	Tag       string
 	Require   bool
+	Active    bool
 }
 
 func (a *Attribute) parseTag() {
 
-	strs := strings.Split(a.Tag, ",")
+	strs := strings.Split(a.Tag, ";")
 	for _, v := range strs {
-		infoStr := strings.Split(v, "=")
+		infoStr := strings.Split(v, ":")
 		if len(infoStr) != 0 {
 			switch infoStr[0] {
 			case "name":
@@ -88,6 +90,9 @@ type InstanceName interface {
 
 // Parse a struct to a Device instance
 func Parse(dest interface{}) *Device {
+	if dest == nil {
+		return nil
+	}
 	deviceType := reflect.Indirect(reflect.ValueOf(dest)).Type()
 	deviceValue := reflect.Indirect(reflect.ValueOf(dest))
 	device := &Device{
@@ -100,9 +105,10 @@ func Parse(dest interface{}) *Device {
 		v := reflect.Indirect(deviceValue.Field(i))
 		if !p.Anonymous && ast.IsExported(p.Name) {
 			if _, ok := v.Interface().(InstanceName); !ok {
+				logrus.Warnln(p.Name, "is not a instance")
 				continue
 			}
-			instance := ParseInstance(v.Interface(), device)
+			instance := ParseInstance(v.Interface())
 			if v, ok := p.Tag.Lookup("tag"); ok {
 				instance.Tag = v
 			}
@@ -117,9 +123,8 @@ func Parse(dest interface{}) *Device {
 }
 
 // ParseInstance a instance to a Instance instance
-func ParseInstance(dest interface{}, device *Device) *Instance {
+func ParseInstance(dest interface{}) *Instance {
 	instanceType := reflect.Indirect(reflect.ValueOf(dest)).Type()
-	instanceValue := reflect.Indirect(reflect.ValueOf(dest))
 	var instanceName string
 	t, ok := dest.(InstanceName)
 	if !ok {
@@ -133,38 +138,50 @@ func ParseInstance(dest interface{}, device *Device) *Instance {
 		attributeMap: make(map[string]*Attribute),
 		Type:         ToSnakeCase(instanceName),
 	}
+	attrs := DeepAttrs(dest, 1)
 
-	attrNum := 1
+	instance.Attributes = append(instance.Attributes, attrs...)
+	for _, attr := range attrs {
+		instance.AttributeNames = append(instance.AttributeNames, attr.Name)
+		instance.attributeMap[ToSnakeCase(attr.Name)] = attr
+	}
+	return instance
+}
+
+// DeepAttrs 递归获取所有属性
+func DeepAttrs(dest interface{}, incrAttrID int) (attrs []*Attribute) {
+
+	instanceType := reflect.Indirect(reflect.ValueOf(dest)).Type()
+	instanceValue := reflect.Indirect(reflect.ValueOf(dest))
+
 	for i := 0; i < instanceType.NumField(); i++ {
-		p := instanceType.Field(i)
-		if !p.Anonymous && ast.IsExported(p.Name) {
+		t := instanceType.Field(i)
+		v := instanceValue.Field(i)
+		if t.Anonymous { // 匿名结构体则递归获取其属性
+			deepAttrs := DeepAttrs(v.Interface(), incrAttrID)
+			attrs = append(attrs, deepAttrs...)
+			incrAttrID += len(deepAttrs)
+		} else if ast.IsExported(t.Name) { // 导出字段作为属性
 			attr := Attribute{
-				ID:    attrNum,
-				Model: instanceValue.Field(i).Interface(),
-				Name:  ToSnakeCase(p.Name),
-				Type:  attribute.TypeOf(reflect.Indirect(reflect.New(p.Type)).Interface()), // FIXME
+				ID:   incrAttrID,
+				Name: ToSnakeCase(t.Name),
+				Type: attribute.TypeOf(reflect.Indirect(reflect.New(t.Type)).Interface()), // FIXME
 			}
-			if v, ok := p.Tag.Lookup("tag"); ok {
+			if v.Kind() != reflect.Ptr {
+				logrus.Warnln(instanceType.Name(), t.Name, "is not pointer, ignore")
+				continue
+			}
+			if v.Kind() != reflect.Struct && !v.IsNil() {
+				attr.Active = true
+				attr.Model = v.Interface()
+			}
+			if v, ok := t.Tag.Lookup("tag"); ok {
 				attr.Tag = v
 			}
 			attr.parseTag()
-			// remove optional field
-			if !attr.Require {
-				if instanceValue.Field(i).IsZero() {
-					continue
-				}
-				v := reflect.Indirect(instanceValue.Field(i))
-				if vv, ok := v.Interface().(attribute.Base); ok {
-					if !vv.Active {
-						continue
-					}
-				}
-			}
-			instance.Attributes = append(instance.Attributes, &attr)
-			instance.AttributeNames = append(instance.AttributeNames, p.Name)
-			instance.attributeMap[ToSnakeCase(p.Name)] = &attr
-			attrNum++
+			incrAttrID++
+			attrs = append(attrs, &attr)
 		}
 	}
-	return instance
+	return attrs
 }

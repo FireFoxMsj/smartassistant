@@ -5,31 +5,46 @@ type Power struct {
 }
 
 func NewPower() *Power {
-	p := Power{StringWithValidValues("on", "off", "switch")}
+	p := Power{StringWithValidValues("on", "off", "toggle")}
 	return &p
 }
 
-type ColorTemp struct {
-	Int
-}
-type Brightness struct {
-	Int
-}
 type Name struct {
 	String
+}
+
+func NewName() *Name {
+	return &Name{}
 }
 
 type Version struct {
 	String
 }
 
+func NewVersion() *Version {
+	return &Version{}
+}
+
 type Identity struct {
 	String
+}
+
+func NewIdentity() *Identity {
+	return &Identity{}
 }
 
 type Model struct {
 	String
 }
+
+func NewModel() *Model {
+	return &Model{}
+}
+
 type Manufacturer struct {
 	String
+}
+
+func NewManufacturer() *Manufacturer {
+	return &Manufacturer{}
 }

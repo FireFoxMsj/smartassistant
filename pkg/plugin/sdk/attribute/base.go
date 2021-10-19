@@ -35,13 +35,8 @@ type BoolType interface {
 }
 
 type Base struct {
-	Active     bool
 	updateFn   UpdateFunc
 	notifyFunc NotifyFunc
-}
-
-func (b *Base) SetActive() {
-	b.Active = true
 }
 
 // SetUpdateFunc 设置属性更新函数
@@ -117,6 +112,29 @@ type String struct {
 	Base
 	v           string
 	validValues map[string]interface{}
+}
+
+type Enum struct {
+	Base
+	v     int
+	enums map[int]struct{}
+}
+
+func (e *Enum) SetEnums(enums ...int) {
+	if e.enums == nil {
+		e.enums = make(map[int]struct{})
+	}
+	for i := range enums {
+		e.enums[i] = struct{}{}
+	}
+}
+
+func (e *Enum) GetEnum() int {
+	return e.v
+}
+
+func (e *Enum) SetEnum(enum int) {
+	e.v = enum
 }
 
 func (s *String) SetString(v string) {

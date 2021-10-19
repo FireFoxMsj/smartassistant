@@ -1,66 +1,77 @@
 syntax = "proto3";
 package proto;
+option go_package = "../proto";
 
 service Plugin {
-    rpc Discover (empty) returns (stream device);
-    rpc StateChange (empty) returns (stream state);
-    rpc GetAttributes (GetAttributesReq) returns (GetAttributesResp);
-    rpc SetAttributes (SetAttributesReq) returns (SetAttributesResp);
+  rpc Discover (empty) returns (stream device);
+  rpc StateChange (empty) returns (stream state);
+  rpc HealthCheck (healthCheckReq) returns (healthCheckResp);
+  rpc GetAttributes (GetAttributesReq) returns (GetAttributesResp);
+  rpc SetAttributes (SetAttributesReq) returns (SetAttributesResp);
 }
 
 message ExecuteReq {
-    string identity = 1;
-    string cmd = 2;
-    bytes data = 3;
+  string identity = 1;
+  string cmd = 2;
+  bytes data = 3;
 }
 message ExecuteResp {
-    bool success = 1;
-    string error = 2;
-    bytes data = 3;
+  bool success = 1;
+  string error = 2;
+  bytes data = 3;
 }
 message GetAttributesReq {
-    string identity = 1;
+  string identity = 1;
 }
 
 message GetAttributesResp {
-    bool success = 1;
-    string error = 2;
-    repeated Instance instances = 3;
+  bool success = 1;
+  string error = 2;
+  repeated Instance instances = 3;
 }
 message Instance {
-    string identity = 1;
-    int32 instance_id = 2;
-    bytes attributes = 3;
-    string type = 4;
+  string identity = 1;
+  int32 instance_id = 2;
+  bytes attributes = 3;
+  string type = 4;
 }
 
 message SetAttributesReq {
-    string identity = 1;
-    bytes data = 2;
+  string identity = 1;
+  bytes data = 2;
 }
 
 message SetAttributesResp {
-    bool success = 1;
-    string error = 2;
+  bool success = 1;
+  string error = 2;
 }
 
 message Action {
-    string identity = 1;
-    int32 instance_id = 2;
-    bytes attributes = 3;
+  string identity = 1;
+  int32 instance_id = 2;
+  bytes attributes = 3;
 }
 
 message device {
-    string identity = 1;
-    string model = 2;
-    string manufacturer = 3;
+  string identity = 1;
+  string model = 2;
+  string manufacturer = 3;
 }
 
 message empty {
 }
 
 message state {
-    string identity = 1;
-    int32 instance_id = 2;
-    bytes attributes = 3;
+  string identity = 1;
+  int32 instance_id = 2;
+  bytes attributes = 3;
+}
+
+message healthCheckReq {
+  string identity = 1;
+}
+
+message healthCheckResp {
+  string identity = 1;
+  bool online = 2;
 }

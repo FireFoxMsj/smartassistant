@@ -7,7 +7,7 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go
 
 go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
 
- protoc --proto_path=:./proto ./proto/*.proto  --go_out=plugins=grpc:./proto --micro_out=./proto
+protoc --proto_path=:./proto ./proto/*.proto  --go_out=plugins=grpc:./proto
 ```
 
 ### 插件实现

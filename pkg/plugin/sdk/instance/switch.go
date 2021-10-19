@@ -5,22 +5,9 @@ import (
 )
 
 type Switch struct {
-	Power *attribute.Power `tag:"name:power;required"`
-	Name  *attribute.Name
+	Power *attribute.Power `tag:"required"`
 }
 
 func (l Switch) InstanceName() string {
 	return "switch"
-}
-
-func NewSwitch() Switch {
-	return Switch{
-		Power: attribute.NewPower(),
-		Name:  &attribute.Name{},
-	}
-}
-
-type Device struct {
-	Light1  LightBulb
-	Switch1 Switch
 }
