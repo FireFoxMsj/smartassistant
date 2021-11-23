@@ -176,7 +176,8 @@ func checkTaskScene(c *gin.Context, controlSceneId int) (err error) {
 }
 
 func (req *CreateSceneReq) createScene(c *gin.Context) (err error) {
-	req.Scene.CreatorID = session.Get(c).UserID
+	u := session.Get(c)
+	req.Scene.CreatorID = u.UserID
 	req.Scene.EffectStart = time.Unix(req.EffectStartTime, 0)
 	req.Scene.EffectEnd = time.Unix(req.EffectEndTime, 0)
 	// 自动场景
@@ -187,7 +188,7 @@ func (req *CreateSceneReq) createScene(c *gin.Context) (err error) {
 
 	req.Scene.SceneTasks = req.SceneTasks
 	// 添加场景所属家庭
-	req.Scene.AreaID = session.Get(c).AreaID
+	req.Scene.AreaID = u.AreaID
 	if err = entity.CreateScene(&req.Scene); err != nil {
 		return
 	}

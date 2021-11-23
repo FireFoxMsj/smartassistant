@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,7 @@ import (
 	"github.com/zhiting-tech/smartassistant/pkg/archive"
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/proto"
 	"log"
+	"math/rand"
 	"os"
 )
 
@@ -40,9 +42,28 @@ func (p Server) Discover(request *proto.Empty, server proto.Plugin_DiscoverServe
 			Model:        device.Info().Model,
 			Manufacturer: device.Info().Manufacturer,
 		}
+		_, d.AuthRequired = device.(AuthDevice)
 		server.Send(&d)
 	}
 	return nil
+}
+
+func (p Server) Connect(ctx context.Context, req *proto.AuthReq) (resp *proto.GetAttributesResp, err error) {
+	logrus.Debugf("%s connect with auth params %v", req.Identity, req.Params)
+	if err = p.Manager.Auth(req.Identity, req.Params); err != nil {
+		return
+	}
+
+	getAttrsReq := proto.GetAttributesReq{Identity: req.Identity}
+	return p.GetAttributes(ctx, &getAttrsReq)
+}
+
+func (p Server) Disconnect(ctx context.Context, req *proto.AuthReq) (resp *proto.Empty, err error) {
+	logrus.Debugf("%s disconnect with params %v", req.Identity, req.Params)
+	if err = p.Manager.Disconnect(req.Identity, req.Params); err != nil {
+		return
+	}
+	return
 }
 
 func (p Server) GetAttributes(context context.Context, request *proto.GetAttributesReq) (resp *proto.GetAttributesResp, err error) {
@@ -139,6 +160,7 @@ func (p Server) StateChange(request *proto.Empty, server proto.Plugin_StateChang
 
 func (p *Server) Init() {
 	p.pluginRouter.Group("html").Static("", p.staticDir)
+	p.pluginRouter.StaticFile("config.json", p.configFile)
 
 	// 压缩静态文件，返回压缩包
 	fileName := fmt.Sprintf("%s.zip", p.Domain)
@@ -176,10 +198,22 @@ func WithConfigFile(configFile string) OptionFunc {
 		s.configFile = configFile
 	}
 }
+func WithDomain(domain string) OptionFunc {
+	return func(s *Server) {
+		s.Domain = domain
+	}
+}
 
-func NewPluginServer(domain string, opts ...OptionFunc) *Server {
+func NewPluginServer(opts ...OptionFunc) *Server {
 	m := NewManager()
 	m.Init()
+
+	domain := os.Getenv("PLUGIN_DOMAIN")
+	if domain == "" {
+		bytes := make([]byte, 4)
+		rand.Read(bytes)
+		domain = hex.EncodeToString(bytes)
+	}
 
 	route := gin.Default()
 	path := fmt.Sprintf("api/plugin/%s", domain)
@@ -187,7 +221,7 @@ func NewPluginServer(domain string, opts ...OptionFunc) *Server {
 
 	s := Server{
 		Manager:      m,
-		Domain:       domain, // TODO 校验domain格式
+		Domain:       domain,
 		Router:       route,
 		pluginRouter: pluginGroup,
 		ApiRouter:    pluginGroup.Group("api"),

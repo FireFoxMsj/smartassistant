@@ -15,59 +15,6 @@
 * id: 消息ID，必填，服务端会返回对应 ID 的结果
 * domain: `plugin`或者插件id
 
-#### 安装插件
-
-```json
-{
-  "id": 1,
-  "domain": "server",
-  "service": "install",
-  "service_data": {
-    "plugin_id": "plugin_id"
-  }
-}
-```
-
-```json
-{
-  "id": 1,
-  "success": true
-}
-```
-
-#### 更新插件
-
-```json
-{
-  "id": 1,
-  "domain": "server",
-  "service": "update",
-  "service_data": {
-    "plugin_id": "plugin_id"
-  }
-}
-```
-
-```json
-{
-  "id": 1,
-  "success": true
-}
-```
-
-#### 删除插件
-
-```json
-{
-  "id": 1,
-  "domain": "server",
-  "service": "remove",
-  "service_data": {
-    "plugin_id": "plugin_id"
-  }
-}
-```
-
 ## 设备相关命令
 
 ## 插件设备状态变更
@@ -82,6 +29,36 @@
     "val": "on",
     "val_type": "string"
   }
+}
+```
+
+### 发现设备
+
+### req
+
+```json
+{
+  "id": 1,
+  "service": "discover"
+}
+```
+
+### resp
+
+```json
+{
+    "id": 1,
+    "type": "",
+    "result": {
+        "device": {
+            "name": "zhiting_M1",
+            "identity": "hijklmn",
+            "model": "M1",
+            "manufacturer": "zhiting",
+            "plugin_id": "demo"
+        }
+    },
+    "success": true
 }
 ```
 

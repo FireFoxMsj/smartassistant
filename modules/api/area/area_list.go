@@ -3,6 +3,7 @@ package area
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
+	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"strconv"
 
 	"github.com/zhiting-tech/smartassistant/modules/entity"
@@ -24,9 +25,8 @@ type Area struct {
 // ListArea 用于处理家庭列表接口的请求
 func ListArea(c *gin.Context) {
 	var (
-		err   error
-		resp  areaListResp
-		areas []entity.Area
+		err  error
+		resp areaListResp
 	)
 	defer func() {
 		if resp.Areas == nil {
@@ -34,13 +34,14 @@ func ListArea(c *gin.Context) {
 		}
 		response.HandleResponse(c, err, resp)
 	}()
-	areas, err = entity.GetAreas()
+
+	area, err := entity.GetAreaByID(session.Get(c).AreaID)
 	if err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
 		return
 	}
 
-	resp.Areas = WrapAreas(areas)
+	resp.Areas = WrapAreas([]entity.Area{area})
 	return
 
 }

@@ -48,7 +48,7 @@ func DelUser(c *gin.Context) {
 		return
 	}
 
-	if entity.IsAreaOwner(userID) {
+	if entity.IsOwner(userID) {
 		err = errors.New(status.Deny)
 		return
 	}

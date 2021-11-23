@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/zhiting-tech/smartassistant/modules/config"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
-	jwt2 "github.com/zhiting-tech/smartassistant/modules/utils/jwt"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
-	"log"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
+	"gopkg.in/oauth2.v3"
+	"gopkg.in/oauth2.v3/server"
 	"net/http"
 	"strconv"
 	"strings"
@@ -54,23 +55,28 @@ func DelCloudDisk(c *gin.Context, ids ...int) (err error) {
 	}
 
 	// 3 获取scope_token
-	claims := jwt2.AccessClaims{
-		UID:   session.Get(c).UserID,
-		SAID:  config.GetConf().SmartAssistant.ID,
-		Exp:   time.Now().Add(10 * time.Minute).Unix(),
-		Scope: strings.Join([]string{"area", "user"}, ","),
+	u := session.Get(c)
+	accessToken := c.GetHeader(types.SATokenKey)
+	ti, _ := oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
+	c.Request.Header.Set(types.AreaID, strconv.FormatUint(u.AreaID, 10))
+	tgr := &server.AuthorizeRequest{
+		ResponseType:   oauth2.Token,
+		ClientID:       ti.GetClientID(),
+		UserID:         ti.GetUserID(),
+		Scope:          strings.Join([]string{"area", "user"}, ","),
+		AccessTokenExp: 10 * time.Minute,
+		Request:        c.Request,
 	}
 
-	token, err := jwt2.GenerateUserJwt(claims, session.Get(c))
+	tokenInfo, err := oauth.GetOauthServer().GetAuthorizeToken(tgr)
 	if err != nil {
-		log.Printf("generate jwt error %s", err.Error())
-		err = errors.Wrap(err, errors.BadRequest)
+		logger.Errorf("get token failed err: (%v)", err)
 		return
 	}
 
 	// 4、获取用户id,scope-token并放入header
-	request.Header.Set("scope-user-id", strconv.Itoa(session.Get(c).UserID))
-	request.Header.Set("scope-token", token)
+	request.Header.Set("scope-user-id", strconv.Itoa(u.UserID))
+	request.Header.Set("scope-token", tokenInfo.GetAccess())
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(request)

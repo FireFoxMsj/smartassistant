@@ -1,14 +1,16 @@
 package device
 
 import (
+	"github.com/zhiting-tech/smartassistant/modules/device"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
+	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
@@ -33,6 +35,20 @@ func (req *UpdateDeviceReq) Validate() (updateDevice entity.Device, err error) {
 		} else {
 			updateDevice.Name = *req.Name
 		}
+	}
+	return
+}
+
+func checkDeviceName(name string) (err error) {
+
+	if name == "" || strings.TrimSpace(name) == "" {
+		err = errors.Wrap(err, status.DeviceNameInputNilErr)
+		return
+	}
+
+	if utf8.RuneCountInString(name) > 20 {
+		err = errors.Wrap(err, status.DeviceNameLengthLimit)
+		return
 	}
 	return
 }
@@ -65,7 +81,7 @@ func UpdateDevice(c *gin.Context) {
 	}
 
 	p := types.NewDeviceUpdate(id)
-	if !isPermit(c, p) {
+	if !device.IsPermit(c, p) {
 		err = errors.Wrap(err, status.Deny)
 		return
 	}

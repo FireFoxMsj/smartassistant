@@ -4,6 +4,8 @@ import (
 	errors2 "errors"
 	"os"
 
+	"github.com/zhiting-tech/smartassistant/modules/types"
+
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
@@ -17,6 +19,7 @@ import (
 type CheckSaDeviceResp struct {
 	IsBind   bool   `json:"is_bind"`
 	Revision string `json:"revision"`
+	Version  string `json:"version"`
 }
 
 // CheckSaDevice 用于处理检查SA设备绑定情况接口的请求
@@ -29,6 +32,7 @@ func CheckSaDevice(c *gin.Context) {
 		response.HandleResponse(c, err, &resp)
 	}()
 	resp.Revision = os.Getenv("GIT_COMMIT")
+	resp.Version = types.Version
 	if _, err = entity.GetSaDevice(); err != nil {
 		if errors2.Is(err, gorm.ErrRecordNotFound) {
 			err = nil

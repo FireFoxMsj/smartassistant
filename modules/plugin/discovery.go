@@ -99,13 +99,17 @@ func (m *discovery) registerService(key string, endpoint endpoints.Endpoint) err
 		return err
 	}
 
+	plgConf, err := GetPluginConfig(endpoint.Addr, service)
+	if err != nil {
+		return err
+	}
 	// FIXME 仅支持单个家庭
 	area, err := getCurrentArea()
 	if err != nil {
 		logger.Errorf("getCurrentArea err: %s", err.Error())
 		return err
 	}
-	cli, err := newClient(area.ID, service, key)
+	cli, err := newClient(area.ID, service, key, plgConf)
 	if err != nil {
 		logger.Errorf("new client err: %s", err.Error())
 		return err

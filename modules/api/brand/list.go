@@ -1,11 +1,10 @@
 package brand
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
-	"github.com/zhiting-tech/smartassistant/modules/plugin"
+	"github.com/zhiting-tech/smartassistant/modules/cloud"
+	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
 
@@ -17,12 +16,9 @@ const (
 
 // BrandInfo 品牌信息
 type BrandInfo struct {
-	LogoURL      string   `json:"logo_url"`
-	Name         string   `json:"name"`
-	PluginAmount int      `json:"plugin_amount"` // 插件数量
-	Plugins      []Plugin `json:"plugins"`
-	IsAdded      bool     `json:"is_added"`  // 是否已添加
-	IsNewest     bool     `json:"is_newest"` // 是否是最新
+	cloud.Brand
+	IsAdded  bool `json:"is_added"`  // 是否已添加
+	IsNewest bool `json:"is_newest"` // 是否是最新
 }
 
 // Resp 品牌列表接口返回数据
@@ -35,42 +31,67 @@ type listBrandsReq struct {
 	Type int `form:"type"` // 0全部1已安装
 }
 
-// pluginsToBrands 将插件列表按品牌划分
-func pluginsToBrands(req *http.Request, plugins map[string]*plugin.Plugin) map[string]BrandInfo {
-	brandMap := make(map[string]BrandInfo)
-	for _, plg := range plugins {
-		brand, ok := brandMap[plg.Brand]
-		if !ok {
-			brand = BrandInfo{
-				LogoURL: plg.BrandLogoURL(req),
-				Name:    plg.Brand,
-			}
-		}
-		brand.PluginAmount += 1
+// ListAddedBrands 获取已添加插件的品牌，不请求SC
+func ListAddedBrands() (brandInfos []BrandInfo, err error) {
 
-		if plg.IsAdded() {
-			brand.IsAdded = true
-		}
-		if plg.IsNewest() {
-			brand.IsNewest = true
-		}
-		brand.Plugins = append(brand.Plugins, Plugin{*plg, plg.IsAdded(), plg.IsNewest()})
-		brandMap[plg.Brand] = brand
-	}
-	return brandMap
-}
-
-func ListBrands(req *http.Request, isAdded bool) (brands []BrandInfo) {
-	plgs, _ := plugin.GetGlobalManager().Load()
-	if len(plgs) == 0 {
+	var installedPlgs []entity.PluginInfo
+	installedPlgs, err = entity.GetInstalledPlugins()
+	if err != nil {
 		return
 	}
-	brandMap := pluginsToBrands(req, plgs)
-	for _, b := range brandMap {
-		if isAdded && !b.IsAdded {
+
+	brandInfoMap := make(map[string]BrandInfo)
+	for _, plg := range installedPlgs {
+		brand, ok := brandInfoMap[plg.Brand]
+		if ok {
 			continue
 		}
-		brands = append(brands, b)
+		brand = BrandInfo{
+			Brand: cloud.Brand{
+				LogoURL:      "", // TODO 使用本地的图片
+				Name:         plg.Brand,
+				PluginAmount: 0,
+			},
+			IsAdded:  true,
+			IsNewest: false, // TODO 品牌是否最新判断不好实现
+		}
+		brandInfoMap[plg.Brand] = brand
+	}
+
+	for _, brandInfo := range brandInfoMap {
+		brandInfos = append(brandInfos, brandInfo)
+	}
+	return
+}
+
+// ListBrands 获取所有品牌
+func ListBrands() (brandInfos []BrandInfo, err error) {
+
+	var brands []cloud.Brand
+	brands, err = cloud.GetBrands()
+	if err != nil {
+		return
+	}
+
+	// 获取所有已安装插件
+	installedPlugins, err := entity.GetInstalledPlugins()
+	if err != nil {
+		return
+	}
+	// 获取所有已安装插件的品牌
+	brandInstallMap := make(map[string]bool)
+	for _, plg := range installedPlugins {
+		brandInstallMap[plg.Brand] = true
+	}
+
+	for _, b := range brands {
+		bi := BrandInfo{
+			Brand: b,
+		}
+		if _, ok := brandInstallMap[b.Name]; ok {
+			bi.IsAdded = true
+		}
+		brandInfos = append(brandInfos, bi)
 	}
 	return
 }
@@ -90,7 +111,9 @@ func List(c *gin.Context) {
 		return
 	}
 
-	resp = Resp{
-		Brands: ListBrands(c.Request, req.Type == typeAdded),
+	if req.Type == typeAdded {
+		resp.Brands, err = ListAddedBrands()
+	} else {
+		resp.Brands, err = ListBrands()
 	}
 }

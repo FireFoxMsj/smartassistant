@@ -37,7 +37,7 @@ func NewDevice() *Device {
 	// 定义属性
 	lightBulb := instance.LightBulb{
 		Power:      attribute.NewPower(),
-		ColorTemp:  attribute.NewColorTemp(), // 可选字段需要初始化才能使用
+		ColorTemp:  instance.NewColorTemp(), // 可选字段需要初始化才能使用
 		Brightness: nil,                      // 可选字段不初始化则不从接口中显示
 	}
 

@@ -8,8 +8,17 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
+	"sort"
 	"strings"
+
+	"github.com/pkg/errors"
+
+	"github.com/zhiting-tech/smartassistant/modules/config"
+
+	"github.com/hashicorp/go-version"
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/archive"
@@ -19,9 +28,9 @@ import (
 
 // Image 镜像
 type Image struct {
-	Name     string `json:"name"`
-	Tag      string `json:"tag"`      // 镜像标签
-	Registry string `json:"registry"` // 仓库地址
+	Name     string `json:"name" yaml:"name"`
+	Tag      string `json:"tag" yaml:"tag"`           // 镜像标签
+	Registry string `json:"registry" yaml:"registry"` // 仓库地址
 }
 
 func (i Image) RefStr() string {
@@ -42,6 +51,45 @@ func (i Image) Repository() string {
 // IsImageNewest TODO 镜像是否最新
 func (c *Client) IsImageNewest() (isNewest bool, err error) {
 	return false, nil
+}
+
+func (c *Client) GetImageNewestTag(img Image) (tag string, err error) {
+	var tagResp struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("https://%v/v2/%v/tags/list", img.Registry, img.Name),
+		nil)
+	if err != nil {
+		return
+	}
+	conf := config.GetConf().Docker
+	req.SetBasicAuth(conf.Username, conf.Password)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	if err = jsoniter.Unmarshal(data, &tagResp); err != nil {
+		return
+	}
+	versions := make([]*version.Version, 0, len(tagResp.Tags))
+	for _, t := range tagResp.Tags {
+		if sv, e := version.NewSemver(t); e == nil {
+			versions = append(versions, sv)
+		}
+	}
+	if len(versions) == 0 {
+		err = errors.New("no version")
+		return
+	}
+	sort.Sort(sort.Reverse(version.Collection(versions)))
+	return versions[0].String(), nil
 }
 
 // IsImageAdd 镜像是否已经拉取到本地
@@ -83,10 +131,10 @@ func (c *Client) ImageRemove(refStr string) (err error) {
 }
 
 // ImageSave save docker images to tar file.
-func (c *Client) ImageSave(target string, imgs ...Image) (err error) {
+func (c *Client) ImageSave(target string, imgs ...string) (err error) {
 	ids := make([]string, 0, len(imgs))
 	for _, img := range imgs {
-		ids = append(ids, img.RefStr())
+		ids = append(ids, img)
 	}
 	readCloser, err := c.DockerClient.ImageSave(context.Background(), ids)
 	if err != nil {

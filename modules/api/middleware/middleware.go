@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
-	"github.com/zhiting-tech/smartassistant/modules/utils/jwt"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/modules/utils/url"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
@@ -24,19 +24,37 @@ import (
 
 // RequireAccount 用户需要登录才可访问对应的接口
 func RequireAccount(c *gin.Context) {
-	u := session.Get(c)
-	if u == nil {
-		response.HandleResponse(c, errors.New(status.RequireLogin), nil)
+	if err := verifyAccessToken(c); err != nil {
+		response.HandleResponse(c, err, nil)
 		c.Abort()
 		return
 	}
+}
+
+func verifyAccessToken(c *gin.Context) (err error) {
+	accessToken := c.GetHeader(types.SATokenKey)
+	if accessToken == "" {
+		accessToken = c.GetHeader(types.ScopeTokenKey)
+		// 将token写入smart-assistant-token 头中，供session.Get()方法使用
+		c.Request.Header.Set(types.SATokenKey, accessToken)
+	}
+	_, err = oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
+	if err != nil {
+		var uerr = errors.New(status.UserNotExist)
+		if err.Error() == uerr.Error() {
+			return uerr
+		}
+		err = errors.Wrap(err, status.RequireLogin)
+		return err
+	}
+	return
 }
 
 // RequireOwner 拥有者才能访问
 func RequireOwner(c *gin.Context) {
 	u := session.Get(c)
 	if u == nil {
-		response.HandleResponse(c, errors.New(status.RequireLogin), nil)
+		response.HandleResponse(c, nil, nil)
 		c.Abort()
 		return
 	}
@@ -49,28 +67,17 @@ func RequireOwner(c *gin.Context) {
 	return
 }
 
-// WithScope 使用 scope_token 校验用户登录状态，并替换成对应的用户 token
+// WithScope 校验用户权限
 func WithScope(scope string) func(ctx *gin.Context) {
-	return func(c *gin.Context) {
-		claims, err := jwt.ValidateUserJwt(c.GetHeader(types.ScopeTokenKey))
-		if err != nil {
-			c.Next()
+	return func(ctx *gin.Context) {
+		accessToken := ctx.GetHeader(types.SATokenKey)
+		ti, _ := oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
+		if !strings.Contains(ti.GetScope(), scope) {
+			err := errors.New(status.Deny)
+			response.HandleResponse(ctx, err, nil)
+			ctx.Abort()
 			return
 		}
-
-		if !strings.Contains(claims.Scope, scope) {
-			c.Next()
-			return
-		}
-
-		if user, err := entity.GetUserByID(claims.UID); err == nil {
-			c.Request.Header.Add(types.SATokenKey, user.Token)
-			if entity.IsAreaOwner(claims.UID) {
-				c.Request.Header.Add(types.RoleKey, types.OwnerRole)
-			}
-
-		}
-		c.Next()
 	}
 
 }
@@ -140,5 +147,17 @@ func ProxyToPlugin(ctx *gin.Context) {
 		req.URL.Path = strings.Replace(req.URL.Path, oldPrefix, newPrefix, 1)
 		logger.Printf("serve request from %s to %s", ctx.Request.URL.Path, req.URL.Path)
 		up.Proxy.ServeHTTP(ctx.Writer, req)
+	}
+}
+
+// ValidateSCReq 校验来自sc的请求
+func ValidateSCReq(c *gin.Context) {
+	accessToken := c.GetHeader("Auth-Token")
+	_, err := oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
+	if err != nil {
+		err = errors.New(status.Deny)
+		response.HandleResponse(c, err, nil)
+		c.Abort()
+		return
 	}
 }

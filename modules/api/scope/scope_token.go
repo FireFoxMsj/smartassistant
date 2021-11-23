@@ -1,17 +1,20 @@
 package scope
 
 import (
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
+	"github.com/zhiting-tech/smartassistant/modules/entity"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
+	"gopkg.in/oauth2.v3"
+	"gopkg.in/oauth2.v3/server"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
-	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/types"
-	jwt2 "github.com/zhiting-tech/smartassistant/modules/utils/jwt"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
-	"github.com/zhiting-tech/smartassistant/pkg/logger"
 )
 
 type token struct {
@@ -29,7 +32,8 @@ var (
 )
 
 type scopeTokenReq struct {
-	Scopes []string `json:"scopes"`
+	Scopes   []string `json:"scopes"`
+	SAUserID *int     `json:"sa_user_id"` // 第三方云通过sc授权时需传对应sa用户的id
 }
 
 func (req *scopeTokenReq) validateRequest(c *gin.Context) (err error) {
@@ -44,7 +48,7 @@ func (req *scopeTokenReq) validateRequest(c *gin.Context) (err error) {
 	}
 	// 必须是允许范围内的scope
 	for _, scope := range req.Scopes {
-		if _, ok := scopes[scope]; !ok {
+		if _, ok := types.Scopes[scope]; !ok {
 			err = errors.New(errors.BadRequest)
 			return
 		}
@@ -58,6 +62,8 @@ func scopeToken(c *gin.Context) {
 		req  scopeTokenReq
 		resp scopeTokenResp
 		err  error
+		uKey string
+		uID  int
 	)
 
 	defer func() {
@@ -68,10 +74,16 @@ func scopeToken(c *gin.Context) {
 		return
 	}
 
-	claims := jwt2.AccessClaims{
-		UID:   session.Get(c).UserID,
-		SAID:  config.GetConf().SmartAssistant.ID,
-		Scope: strings.Join(req.Scopes, ","),
+	sessionUser := session.Get(c)
+	uKey = sessionUser.Key
+	uID = sessionUser.UserID
+	if req.SAUserID != nil && *req.SAUserID != 0 {
+		u, err := entity.GetUserByID(*req.SAUserID)
+		if err != nil {
+			return
+		}
+		uKey = u.Key
+		uID = u.ID
 	}
 
 	expireTime := expiresIn
@@ -79,16 +91,27 @@ func scopeToken(c *gin.Context) {
 		expireTime = cloudExpireIn
 	}
 
-	claims.Exp = time.Now().Add(expireTime).Unix()
+	u := session.Get(c)
+	accessToken := c.GetHeader(types.SATokenKey)
+	ti, _ := oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
+	c.Request.Header.Set(types.AreaID, strconv.FormatUint(u.AreaID, 10))
+	c.Request.Header.Set(types.UserKey, uKey)
+	tgr := &server.AuthorizeRequest{
+		ResponseType:   oauth2.Token,
+		ClientID:       ti.GetClientID(),
+		UserID:         strconv.Itoa(uID),
+		Scope:          strings.Join(req.Scopes, ","),
+		AccessTokenExp: expireTime,
+		Request:        c.Request,
+	}
 
-	token, err := jwt2.GenerateUserJwt(claims, session.Get(c))
+	// TODO 使用oauth2生成scope_token，后续需要与前端联调去除
+	tokenInfo, err := oauth.GetOauthServer().GetAuthorizeToken(tgr)
 	if err != nil {
-		logger.Printf("generate jwt error %s", err.Error())
+		logger.Printf("get oauth2 token error %s", err.Error())
 		err = errors.Wrap(err, errors.BadRequest)
 		return
 	}
-	resp.ScopeToken.Token = token
-
+	resp.ScopeToken.Token = tokenInfo.GetAccess()
 	resp.ScopeToken.ExpiresIn = int(expireTime / time.Second)
-
 }

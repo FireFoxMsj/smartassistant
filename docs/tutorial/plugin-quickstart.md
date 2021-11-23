@@ -69,11 +69,12 @@ type Device struct {
 	ch       server.WatchChan
 }
 
-func NewDevice() *Device {
+func NewDevice(identity string) *Device {
 	// 定义设备属性
 	lightBulb := instance.LightBulb{
-		Power:     attribute.NewPower(),
-		ColorTemp: &attribute.ColorTemp{}, // 根据需要初始化可选字段
+		Power:      attribute.NewPower(),
+		ColorTemp:  instance.NewColorTemp(),
+		Brightness: instance.NewBrightness(),
 	}
 
 	// 定义设备基础属性
@@ -87,12 +88,40 @@ func NewDevice() *Device {
 	return &Device{
 		LightBulb: lightBulb,
 		Info0:     info,
+		identity:  identity,
+		ch:        make(chan server.Notification, 5),
 	}
 }
 
 func (d *Device) Info() server.DeviceInfo {
 	// 该方法返回设备的主要信息
 	return d.identity
+}
+
+func (d *Device) update(attr string) attribute.UpdateFunc {
+	return func(val interface{}) error {
+		switch attr {
+		case "power":
+			d.LightBulb.Power.SetString(val.(string))
+		case "brightness":
+			d.LightBulb.Brightness.SetInt(val.(int))
+		case "color_temp":
+			d.LightBulb.ColorTemp.SetInt(val.(int))
+		}
+
+		n := server.Notification{
+			Identity:   d.identity,
+			InstanceID: 1,
+			Attr:       attr,
+			Val:        val,
+		}
+		select {
+		case d.ch <- n:
+		default:
+		}
+
+		return nil
+	}
 }
 
 func (d *Device) Setup() error {
@@ -113,9 +142,9 @@ func (d *Device) Setup() error {
 
 func (d *Device) Update() error {
 	// 该方法在获取设备所有属性值时调用，通过调用attribute.SetBool()等方法更新
-	d.LightBulb.Power.SetString("on")
-	d.LightBulb.Brightness.SetInt(100)
-	d.LightBulb.ColorTemp.SetInt(2000)
+	// d.LightBulb.Power.SetString("on")
+	// d.LightBulb.Brightness.SetInt(100)
+	// d.LightBulb.ColorTemp.SetInt(2000)
 	return nil
 }
 
@@ -148,7 +177,7 @@ func main() {
 	p := server.NewPluginServer("demo")
 	go func() {
 		// 发现设备
-		d := NewDevice()
+		d := NewDevice("abcdefg")
 		p.Manager.AddDevice(d)
 	}()
 	err := sdk.Run(p)
@@ -186,6 +215,14 @@ ENTRYPOINT ["/app/demo-plugin"]
 
 ```shell
 docker build -f your_plugin_Dockerfile -t your_plugin_name
+```
+
+- 运行插件
+
+```shell
+docker run -net=host your_plugin_name
+
+//注意：-net=host 参数只有linux环境才有用。
 ```
 
 - 更多

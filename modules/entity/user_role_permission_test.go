@@ -362,9 +362,13 @@ func TestDeviceControlPermit(t *testing.T) {
 		{notExistUserID, notExitDeviceID, false},
 	}
 
-	for _, t := range tt {
-		res := DeviceControlPermit(t.userID, t.deviceID)
-		ast.Equal(t.expectedRes, res)
+	for _, tc := range tt {
+		up, err := GetUserPermissions(tc.userID)
+		if err != nil {
+			t.Error(err)
+		}
+		res := up.IsDeviceControlPermit(tc.deviceID)
+		ast.Equal(tc.expectedRes, res)
 	}
 }
 

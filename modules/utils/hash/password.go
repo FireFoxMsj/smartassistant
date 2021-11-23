@@ -22,8 +22,8 @@ func CheckPassword(password, salt, hashedPassword string) bool {
 	return GenerateHashedPassword(password, salt) == hashedPassword
 }
 
-// GetSaToken 生成sa的token
-func GetSaToken() (saToken string) {
+// GetSaKey 生成sa用户的Key
+func GetSaUserKey() (saToken string) {
 	tokenId := strings.TrimRight(base32.StdEncoding.EncodeToString(securecookie.GenerateRandomKey(32)), "=")
 	codeCs := securecookie.CodecsFromPairs([]byte(saSecretKey))
 	saToken, _ = securecookie.EncodeMulti(saTokenName, tokenId, codeCs...)

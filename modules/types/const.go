@@ -1,20 +1,10 @@
 package types
 
 const (
-	EventSingleCast    = "single_cast"
-	EventInstallPlugin = "plugin_installed"
-
-	EventDeviceDiscovered = "device_discovered"
-	EventStateChanged     = "state_changed"
-
-	EventCallService = "call_service"
-)
-
-const (
 	SATokenKey      = "smart-assistant-token"
 	SaModel         = "smart_assistant"
 	ScopeTokenKey   = "scope-token"
-	VerificationKey = "verification-code"
+	VerificationKey = "verification-code" // 临时密码
 
 	RoleKey   = "role"
 	OwnerRole = "owner"
@@ -22,6 +12,12 @@ const (
 	// 云端校验来自sa的请求时使用
 	SAID  = "SA-ID"
 	SAKey = "SA-Key"
+
+	// 生成oauth token时使用
+	AreaID  = "Area-ID"
+	UserKey = "User-Key"
+
+	DockerRegistry = "docker.yctc.tech"
 )
 
 const (

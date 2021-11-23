@@ -65,8 +65,12 @@ func (task SceneTask) CheckTaskDevice(userId int) (err error) {
 		logger.Error(err)
 		return
 	}
+	up, err := GetUserPermissions(userId)
+	if err != nil {
+		return
+	}
 	for _, taskDevice := range ds {
-		if !IsDeviceControlPermit(userId, task.DeviceID, taskDevice) {
+		if !up.IsDeviceAttrPermit(task.DeviceID, taskDevice) {
 			err = errors.New(status.DeviceOrSceneControlDeny)
 			return
 		}

@@ -17,7 +17,7 @@ func RegisterDeviceRouter(r gin.IRouter) {
 	deviceGroup := r.Group("devices")
 	deviceGroup.POST("", AddDevice)
 
-	deviceAuthGroup := r.Group("devices", middleware.WithScope("user"), middleware.RequireAccount)
+	deviceAuthGroup := r.Group("devices", middleware.RequireAccount, middleware.WithScope("device"))
 	deviceAuthGroup.GET("", ListAllDevice)
 	deviceAuthGroup.PUT(":id", requireBelongsToUser, UpdateDevice)
 	deviceAuthGroup.GET(":id", requireBelongsToUser, InfoDevice)
@@ -49,13 +49,13 @@ func requireBelongsToUser(c *gin.Context) {
 		return
 	}
 
-	location, err := entity.GetDeviceByID(deviceID)
+	device, err := entity.GetDeviceByID(deviceID)
 	if err != nil {
 		response.HandleResponse(c, errors.Wrap(err, errors.InternalServerErr), nil)
 		c.Abort()
 		return
 	}
-	if location.IsBelongsToUserArea(user) {
+	if device.AreaID == user.AreaID {
 		c.Next()
 	} else {
 		response.HandleResponse(c, errors.New(status.Deny), nil)

@@ -8,11 +8,13 @@ const (
 	PluginServiceNotExist
 	PluginTypeNotSupport
 	PluginIsEmpty
+	PluginContentIllegal
 )
 
 func init() {
 	errors.NewCode(PluginDomainNotExist, "插件不存在")
 	errors.NewCode(PluginServiceNotExist, "插件功能不存在")
-	errors.NewCode(PluginTypeNotSupport, "请上传正确的插件包")
+	errors.NewCode(PluginTypeNotSupport, "插件包格式不正确")
 	errors.NewCode(PluginIsEmpty, "请上传插件")
+	errors.NewCode(PluginContentIllegal, "插件包内容不符合规范")
 }

@@ -72,6 +72,11 @@ func GetRoles(areaID uint64) (roles []Role, err error) {
 	return
 }
 
+func GetRolesWithTx(tx *gorm.DB, areaID uint64) (roles []Role, err error) {
+	err = GetDBWithAreaScopeTx(tx, areaID).Find(&roles).Error
+	return
+}
+
 func GetRoleByID(id int) (role Role, err error) {
 	err = GetDB().First(&role, id).Error
 	if err != nil {

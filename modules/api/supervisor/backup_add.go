@@ -9,7 +9,7 @@ import (
 )
 
 type backupAddReq struct {
-	Name string `json:"name"`
+	Note string `json:"note"`
 }
 
 // AddBackup 创建并且启动备份
@@ -27,10 +27,7 @@ func AddBackup(c *gin.Context) {
 		err = errors.Wrap(err, errors.BadRequest)
 		return
 	}
-	err = supervisor.GetManager().StartBackupJob(req.Name)
-	if err != nil {
-		err = errors.Wrap(err, errors.InternalServerErr)
-	}
+	err = supervisor.GetManager().StartBackupJob(req.Note)
 	if err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
 	}

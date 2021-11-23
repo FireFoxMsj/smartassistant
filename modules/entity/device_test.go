@@ -58,10 +58,10 @@ func TestCheckSaDeviceCreator(t *testing.T) {
 func TestIsSAOwner(t *testing.T) {
 	ast := assert.New(t)
 
-	ok := IsSAOwner(1)
+	ok := IsOwner(1)
 	ast.True(ok, "is Sa Creator error")
 
-	ok = IsSAOwner(2)
+	ok = IsOwner(2)
 	ast.False(ok, "is Sa Creator error")
 }
 

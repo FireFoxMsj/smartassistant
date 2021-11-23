@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -14,18 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zhiting-tech/smartassistant/modules/types"
-	"gopkg.in/yaml.v2"
-
-	"github.com/zhiting-tech/smartassistant/pkg/logger"
-
-	"github.com/zhiting-tech/smartassistant/modules/plugin"
-
-	"github.com/zhiting-tech/smartassistant/modules/plugin/docker"
-
-	"github.com/sirupsen/logrus"
-
 	"github.com/zhiting-tech/smartassistant/modules/config"
+	"github.com/zhiting-tech/smartassistant/modules/plugin"
+	"github.com/zhiting-tech/smartassistant/modules/plugin/docker"
+	"github.com/zhiting-tech/smartassistant/modules/types"
+	"github.com/zhiting-tech/smartassistant/modules/types/status"
+	errors2 "github.com/zhiting-tech/smartassistant/pkg/errors"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -38,7 +35,7 @@ var (
 	saImage = docker.Image{
 		Name:     "smartassistant",
 		Tag:      types.Version,
-		Registry: "docker.yctc.tech",
+		Registry: types.DockerRegistry,
 	}
 )
 
@@ -50,24 +47,50 @@ type Manager struct {
 
 func GetManager() *Manager {
 	_once.Do(func() {
+		ab, err := filepath.Abs(config.GetConf().SmartAssistant.BackupPath())
+		if err != nil {
+			logger.Errorf("backup path not valid: %v", err)
+		}
+		ar, err := filepath.Abs(config.GetConf().SmartAssistant.RuntimePath)
+		if err != nil {
+			logger.Errorf("runtime path not valid: %v", err)
+		}
 		manager = &Manager{
-			RuntimePath: config.GetConf().SmartAssistant.RuntimePath,
-			BackupPath:  config.GetConf().SmartAssistant.BackupPath(),
+			RuntimePath: ar,
+			BackupPath:  ab,
 		}
 		_ = os.MkdirAll(manager.BackupPath, os.ModePerm)
 		f, err := os.Stat(manager.BackupPath)
 		if os.IsNotExist(err) {
-			logrus.Errorf("can not create backup path %v", manager.BackupPath)
+			logger.Errorf("can not create backup path %v", manager.BackupPath)
 		}
 		if !f.IsDir() {
-			logrus.Error("backup path is not a dir")
+			logger.Error("backup path is not a dir")
 		}
 	})
 	return manager
 }
 
-func (m *Manager) ListBackups() []*Backup {
-	return nil
+func (m *Manager) ListBackups() []Backup {
+	bks := make([]Backup, 0)
+	filepath.Walk(m.BackupPath, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		// TODO 只查找第一层的zip文件
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Dir(path) != m.BackupPath {
+			return nil
+		}
+		if filepath.Ext(path) != ".zip" {
+			return nil
+		}
+		bks = append(bks, NewBackupFromFileName(info.Name()))
+		return nil
+	})
+	return bks
 }
 
 // ProcessBackupJob 处理备份，恢复功能
@@ -77,71 +100,70 @@ func (m *Manager) ProcessBackupJob() (err error) {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		logrus.Warnf("read stage file error %v", err)
+		logger.Warnf("read stage file error %v", err)
 		return
 	}
-	logrus.Infof("processing backup job (%v), (%v)", stage.Value, stage.BackupName)
+	logger.Infof("processing backup job (%v)", stage.Value)
 	defer func() {
 		// 无论是否成功均需要删除过程文件
 		if err = stage.remove(); err != nil {
-			logrus.Warnf("can not remove stage file %v", err)
+			logger.Warnf("can not remove stage file %v", err)
 		} else {
-			logrus.Info("remove stage file ok")
+			logger.Info("remove stage file ok")
 		}
 	}()
 	switch stage.Value {
 	case StageBackupInit:
-		logrus.Infof("start backup %v", stage.BackupName)
-		backup, err := m.Backup(stage.BackupName)
+		logger.Infof("start backup %v", stage.Note)
+		backup, err := m.Backup(stage.Note)
 		if err != nil {
 			return err
 		}
-		logrus.Infof("backup success: %v", backup.Name)
+		logger.Infof("backup success: %v", backup.Note)
 	case StageRestoreInit:
-		logrus.Infof("start restore %v", stage.BackupName)
-		err = m.Restore(stage.BackupName)
+		logger.Infof("start restore %v", stage.Note)
+		err = m.Restore(stage.Note)
 		return err
 	}
 	return
 }
 
 func stopAllPlugins() (err error) {
-	resumeContainer := func(imgs []docker.Image) {
-		for _, img := range imgs {
-			_, _ = docker.GetClient().ContainerRunByImage(img)
+	resumeContainer := func(plgs []plugin.Plugin) {
+		for _, plg := range plgs {
+			_, _ = plugin.RunPlugin(plg)
 		}
 	}
-	plgs, err := plugin.GetGlobalManager().Load()
+	plgs, err := plugin.GetGlobalManager().LoadPlugins()
 	cli := docker.GetClient()
 	if err != nil {
 		return
 	}
-	stoppedImages := make([]docker.Image, 0)
+	stoppedPlgs := make([]plugin.Plugin, 0)
 	for _, plg := range plgs {
-		ps, _ := docker.GetClient().ContainerIsRunningByImage(plg.Image.RefStr())
+		ps, _ := docker.GetClient().ContainerIsRunningByImage(plg.Image)
 		if ps == false {
 			continue
 		}
 
-		err = cli.ContainerStopByImage(plg.Image.RefStr())
+		err = cli.ContainerStopByImage(plg.Image)
 		if err != nil {
-			resumeContainer(stoppedImages)
+			resumeContainer(stoppedPlgs)
 			return err
 		} else {
-			stoppedImages = append(stoppedImages, plg.Image)
+			stoppedPlgs = append(stoppedPlgs, *plg)
 		}
 	}
 	return
 }
 
 func startAllPlugins() (err error) {
-	plgs, err := plugin.GetGlobalManager().Load()
-	cli := docker.GetClient()
+	plgs, err := plugin.GetGlobalManager().LoadPlugins()
 	if err != nil {
 		return
 	}
 	for _, plg := range plgs {
-		cli.ContainerRunByImage(plg.Image)
+		plugin.RunPlugin(*plg)
 	}
 	return
 }
@@ -157,21 +179,21 @@ func (m *Manager) processRestart(cn string) (err error) {
 		err = docker.GetClient().DockerClient.ContainerRestart(context.Background(),
 			cn, nil)
 		if err != nil {
-			logrus.Warnf("restart self error %v", err)
+			logger.Warnf("restart self error %v", err)
 		}
 	}()
 	return
 }
 
 // StartBackupJob 开始备份，将创建过程文件，关闭所有插件，然后重启
-func (m *Manager) StartBackupJob(name string) (err error) {
+func (m *Manager) StartBackupJob(note string) (err error) {
 	id, err := docker.GetClient().GetContainerByImage(saImage.RefStr())
 	if err != nil {
 		logger.Warnf("cannot find container %v, %v", saImage.RefStr(), err)
 		return
 	}
 	s := NewStage(filepath.Join(m.BackupPath, stageDir), StageBackupInit)
-	s.BackupName = name
+	s.Note = note
 	err = s.save()
 	if err != nil {
 		return
@@ -184,23 +206,20 @@ func (m *Manager) StartBackupJob(name string) (err error) {
 }
 
 // Backup 接着 StartBackupJob，备份镜像，备份文件，打包
-func (m *Manager) Backup(name string) (backup *Backup, err error) {
-	logrus.Infof("creating backup (%v)", name)
+func (m *Manager) Backup(note string) (backup *Backup, err error) {
+	logger.Infof("creating backup (%v)", note)
 	dir, err := ioutil.TempDir(m.BackupPath, "tmp")
 	if err != nil {
 		return
 	}
 	defer os.RemoveAll(dir)
-	backup = newBackup(name)
+	backup = newBackup(note)
 	err = backup.Save(dir)
 	if err != nil {
-		logrus.Infof("backup create with error (%v)", err)
+		logger.Infof("backup create with error (%v)", err)
 		return
 	}
-
-	tn := time.Now()
-	fn := fmt.Sprintf("%s-%s.zip", tn.Format(time.RFC3339), name)
-	f, err := os.Create(filepath.Join(m.BackupPath, fn))
+	f, err := os.Create(filepath.Join(m.BackupPath, backup.FileName))
 	if err != nil {
 		return
 	}
@@ -211,7 +230,7 @@ func (m *Manager) Backup(name string) (backup *Backup, err error) {
 		if err != nil {
 			return err
 		}
-		logrus.Infof("path %v", path)
+		logger.Infof("path %v", path)
 		if !fi.IsDir() {
 			data, err := os.Open(path)
 			if err != nil {
@@ -228,10 +247,10 @@ func (m *Manager) Backup(name string) (backup *Backup, err error) {
 		return nil
 	})
 	if err != nil {
-		logrus.Warnf("pack backup error (%v)", err)
+		logger.Warnf("pack backup error (%v)", err)
 		return
 	}
-	logrus.Infof("backup (%v) success", name)
+	logger.Infof("backup success")
 	return
 }
 
@@ -277,14 +296,14 @@ func (m *Manager) mergeConfigFile() (err error) {
 func (m *Manager) StartRestoreCloudJob(name string) (err error) {
 	id, err := docker.GetClient().GetContainerByImage(saImage.RefStr())
 	if err != nil {
-		logrus.Infof("read Container id error %v", err)
+		logger.Infof("read Container id error %v", err)
 		return
 	}
 	fn := filepath.Join(m.BackupPath, name)
-	logrus.Infof("starting restore from %v", fn)
+	logger.Infof("starting restore from %v", fn)
 	fi, err := os.Stat(fn)
 	if err != nil {
-		logrus.Warnf("stat error %v", err)
+		logger.Warnf("stat error %v", err)
 		return err
 	}
 	sDir := filepath.Join(m.BackupPath, stageDir)
@@ -305,7 +324,7 @@ func (m *Manager) StartRestoreCloudJob(name string) (err error) {
 	if err != nil {
 		return
 	}
-	s.BackupName = backup.Name
+	s.Note = backup.Note
 	if err != nil {
 		return
 	}
@@ -317,7 +336,7 @@ func (m *Manager) StartRestoreCloudJob(name string) (err error) {
 	if err != nil {
 		_ = s.remove()
 	}
-	logrus.Infof("restore from %v", fi.Name())
+	logger.Infof("restore from %v", fi.Name())
 	return
 }
 
@@ -327,11 +346,11 @@ func (m *Manager) StartRestoreJob(name string) (err error) {
 	if err != nil {
 		return
 	}
-	fn := filepath.Join(m.BackupPath, name)
-	logrus.Infof("starting restore from %v", fn)
+	fn := filepath.Join(m.BackupPath, filepath.Clean("/"+name))
+	logger.Infof("starting restore from %v", fn)
 	fi, err := os.Stat(fn)
 	if err != nil {
-		logrus.Warnf("stat error %v", err)
+		logger.Warnf("stat error %v", err)
 		return err
 	}
 	sDir := filepath.Join(m.BackupPath, stageDir)
@@ -346,7 +365,7 @@ func (m *Manager) StartRestoreJob(name string) (err error) {
 	if backup == nil {
 		return errors.New("load backup error")
 	}
-	s.BackupName = backup.Name
+	s.Note = backup.Note
 	err = s.save()
 	if err != nil {
 		return
@@ -355,25 +374,25 @@ func (m *Manager) StartRestoreJob(name string) (err error) {
 	if err != nil {
 		_ = s.remove()
 	}
-	logrus.Infof("restore from %v", fi.Name())
+	logger.Infof("restore from %v", fi.Name())
 	return
 }
 
 // Restore 接着 StartRestoreJob，替换文件，导入镜像，通过 supervisor 重启
-func (m *Manager) Restore(image string) (err error) {
+func (m *Manager) Restore(note string) (err error) {
 	sDir := filepath.Join(m.BackupPath, stageDir)
 	backup := loadBackup(sDir)
 	if backup == nil {
 		return errors.New("load backup error")
 	}
-	logrus.Infof("creating backup (%v)", image)
+	logger.Infof("creating backup (%v)", note)
 	dir, err := ioutil.TempDir(m.BackupPath, "tmp")
 	if err != nil {
 		logger.Errorf("create backup error %v", err)
 		return
 	}
 	defer os.RemoveAll(dir)
-	bak := newBackup(fmt.Sprintf("%v-stage", image))
+	bak := newBackup(fmt.Sprintf("%v-stage", note))
 	err = bak.Save(dir)
 	if err != nil {
 		logger.Errorf("save backup error %v", err)
@@ -453,12 +472,12 @@ func (m *Manager) unzip(fn, dst string) (err error) {
 	}
 	defer zr.Close()
 	for _, file := range zr.File {
-		path := filepath.Join(dst, file.Name)
-		logrus.Infof("extracting %v", file.Name)
+		p := filepath.Join(dst, file.Name)
+		logger.Infof("extracting %v", file.Name)
 		// 如果是目录，就创建目录
 		if file.FileInfo().IsDir() {
-			logrus.Infof("creating dir")
-			if err := os.MkdirAll(path, file.Mode()); err != nil {
+			logger.Infof("creating dir")
+			if err := os.MkdirAll(p, file.Mode()); err != nil {
 				return err
 			}
 			continue
@@ -467,15 +486,15 @@ func (m *Manager) unzip(fn, dst string) (err error) {
 		// 获取到 Reader
 		fr, err := file.Open()
 		if err != nil {
-			logrus.Warnf("reader err %v", err)
+			logger.Warnf("reader err %v", err)
 			return err
 		}
-		fdir := filepath.Dir(path)
+		fdir := filepath.Dir(p)
 		os.MkdirAll(fdir, os.ModePerm)
 		// 创建要写出的文件对应的 Write
-		fw, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, file.Mode())
+		fw, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR|os.O_TRUNC, file.Mode())
 		if err != nil {
-			logrus.Warnf("writer err %v", err)
+			logger.Warnf("writer err %v", err)
 			fr.Close()
 			return err
 		}
@@ -484,9 +503,51 @@ func (m *Manager) unzip(fn, dst string) (err error) {
 		fw.Close()
 		fr.Close()
 		if err != nil {
-			logrus.Warnf("copy err %v", err)
+			logger.Warnf("copy err %v", err)
 			return err
 		}
 	}
+	return
+}
+
+func (m *Manager) DeleteBackup(fn string) error {
+	fn = filepath.Join(m.BackupPath, filepath.Clean("/"+fn))
+	fi, err := os.Stat(fn)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errors2.New(status.FileNotExistErr)
+		}
+		return err
+	}
+	if fi.IsDir() {
+		return errors2.New(status.FileNotExistErr)
+	}
+	return os.RemoveAll(fn)
+}
+
+// StartUpdateJob 下载新版镜像，通知supervisor以新镜像重启
+func (m *Manager) StartUpdateJob(version string) (err error) {
+	newImage := docker.Image{
+		Name:     "smartassistant",
+		Tag:      version,
+		Registry: types.DockerRegistry,
+	}
+	err = docker.GetClient().Pull(newImage.RefStr())
+	if err != nil {
+		err = errors2.New(status.ImagePullErr)
+		return
+	}
+	err = stopAllPlugins()
+	if err != nil {
+		return
+	}
+	go func() {
+		err = Restart(newImage.RefStr())
+		if err != nil {
+			logger.Errorf("restart error %v", err)
+		}
+		time.Sleep(10 * time.Second)
+		logger.Warnf("restart failed...")
+	}()
 	return
 }

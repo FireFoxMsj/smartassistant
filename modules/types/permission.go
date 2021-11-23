@@ -4,6 +4,11 @@ import (
 	"fmt"
 )
 
+const (
+	FwUpgrade       = "firmware_upgrade" // 固件升级
+	SoftwareUpgrade = "software_upgrade" // 软件升级
+)
+
 type Permission struct {
 	Name      string `json:"name"`
 	Action    string `json:"action"`    // 动作
@@ -66,9 +71,9 @@ func NewDeviceUpdate(deviceID int) Permission {
 	return Permission{"修改设备", "update", target, ""}
 }
 
-func NewDeviceManage(deviceID int) Permission {
+func NewDeviceManage(deviceID int, name string, attr string) Permission {
 	target := DeviceTarget(deviceID)
-	return Permission{"固件升级", "manage", target, "upgrade"}
+	return Permission{name, "manage", target, attr}
 }
 
 func init() {

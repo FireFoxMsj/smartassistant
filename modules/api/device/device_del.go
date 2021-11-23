@@ -1,6 +1,7 @@
 package device
 
 import (
+	"github.com/zhiting-tech/smartassistant/modules/device"
 	"github.com/zhiting-tech/smartassistant/modules/plugin"
 	"strconv"
 
@@ -30,7 +31,7 @@ func DelDevice(c *gin.Context) {
 	}
 
 	p := types.NewDeviceDelete(deviceId)
-	if !isPermit(c, p) {
+	if !device.IsPermit(c, p) {
 		err = errors.Wrap(err, status.Deny)
 		return
 	}

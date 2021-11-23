@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"io"
+	"io/ioutil"
+	"net/http"
 	"sync"
 	"time"
 
@@ -22,6 +24,11 @@ import (
 
 var NotExistErr = errors.New("plugin not exist")
 
+const (
+	healthCheckInternal = time.Second * 10 // 存活检查间隔
+	offlineTimeout      = time.Second * 15 // 超过这个时间没有响应在线判断为离线
+)
+
 type client struct {
 	mu      sync.Mutex // clients 锁
 	clients map[string]*pluginClient
@@ -30,29 +37,58 @@ type client struct {
 	stateChangeCallbacks []OnDeviceStateChange
 }
 
-func (c *client) DeviceInfo(d entity.Device) (conf Info) {
-	if d.Model == types.SaModel {
-		return
-	}
+func (c *client) DeviceConfigs() (configs []DeviceConfig) {
 
-	plg, _ := GetGlobalManager().Get(d.PluginID)
-	if plg == nil {
-		return
-	}
-	for _, sd := range plg.SupportDevices {
-		if d.Model != sd.Model {
-			continue
-		}
-		return Info{
-			Logo:    sd.Logo,
-			Control: sd.Control,
+	for _, cli := range c.clients {
+		for _, d := range cli.PluginConf.SupportDevices {
+			conf := DeviceConfig{
+				Device:   *d,
+				PluginID: cli.PluginConf.ID,
+			}
+			configs = append(configs, conf)
 		}
 	}
 	return
 }
 
-func (c *client) Disconnect(device entity.Device) error {
-	v, loaded := c.devicesCancel.LoadAndDelete(device.Identity)
+func (c *client) DeviceConfig(d entity.Device) (config DeviceConfig) {
+	if d.Model == types.SaModel {
+		return
+	}
+
+	cli, err := c.get(d.PluginID)
+	if err != nil {
+		return
+	}
+
+	for _, sd := range cli.PluginConf.SupportDevices {
+		if d.Model != sd.Model {
+			continue
+		}
+		config.Device = *sd
+		config.PluginID = cli.PluginConf.ID
+		return
+	}
+	return
+}
+
+func (c *client) Disconnect(identity, pluginID string, authParams map[string]string) (err error) {
+	req := proto.AuthReq{
+		Identity: identity,
+		Params:   authParams,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+	cli, err := c.get(pluginID)
+	if err != nil {
+		return
+	}
+	_, err = cli.protoClient.Disconnect(ctx, &req)
+	if err != nil {
+		return
+	}
+
+	v, loaded := c.devicesCancel.LoadAndDelete(identity)
 	if loaded {
 		if cancel, ok := v.(context.CancelFunc); ok {
 			cancel()
@@ -184,7 +220,7 @@ func (c *client) SetAttributes(d entity.Device, data json.RawMessage) (result []
 		Data:     data,
 	}
 	logger.Debug("set attributes: ", string(data))
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	cli, err := c.get(d.PluginID)
 	if err != nil {
@@ -196,6 +232,47 @@ func (c *client) SetAttributes(d entity.Device, data json.RawMessage) (result []
 		return
 	}
 	return
+}
+
+// Connect 连接设备
+func (c *client) Connect(identity, pluginID string, authParams map[string]string) (das DeviceAttributes, err error) {
+	req := proto.AuthReq{
+		Identity: identity,
+		Params:   authParams,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5) // 配对认证过程较长可能长达数分钟
+	defer cancel()
+
+	cli, err := c.get(pluginID)
+	if err != nil {
+		return
+	}
+	resp, err := cli.protoClient.Connect(ctx, &req)
+	if err != nil {
+		return
+	}
+	logger.Debugf("connect resp: %#v\n", resp)
+	das = parseAttrsResp(identity, resp)
+	return
+}
+
+func parseAttrsResp(identity string, resp *proto.GetAttributesResp) DeviceAttributes {
+
+	var instances []Instance
+	for _, instance := range resp.Instances {
+		var attrs []Attribute
+		_ = json.Unmarshal(instance.Attributes, &attrs)
+		i := Instance{
+			Type:       instance.Type,
+			InstanceId: int(instance.InstanceId),
+			Attributes: attrs,
+		}
+		instances = append(instances, i)
+	}
+	return DeviceAttributes{
+		Identity:  identity,
+		Instances: instances,
+	}
 }
 
 func (c *client) GetAttributes(d entity.Device) (das DeviceAttributes, err error) {
@@ -211,23 +288,8 @@ func (c *client) GetAttributes(d entity.Device) (das DeviceAttributes, err error
 	if err != nil {
 		return
 	}
-	logger.Debugf("state resp: %#v\n", resp)
-
-	var instances []Instance
-	for _, instance := range resp.Instances {
-		var attrs []Attribute
-		_ = json.Unmarshal(instance.Attributes, &attrs)
-		i := Instance{
-			Type:       instance.Type,
-			InstanceId: int(instance.InstanceId),
-			Attributes: attrs,
-		}
-		instances = append(instances, i)
-	}
-	das = DeviceAttributes{
-		Identity:  d.Identity,
-		Instances: instances,
-	}
+	logger.Debugf("GetAttributes resp: %#v\n", resp)
+	das = parseAttrsResp(d.Identity, resp)
 	return
 }
 
@@ -253,11 +315,12 @@ type pluginClient struct {
 	protoClient proto.PluginClient // 请求插件服务的grpc客户端
 	cancel      context.CancelFunc
 	ctx         context.Context
+	PluginConf  Plugin
 
-	deviceStatus sync.Map
+	deviceLastOnlineTime sync.Map
 }
 
-func newClient(areaID uint64, plgID, key string) (*pluginClient, error) {
+func newClient(areaID uint64, plgID, key string, plgConf Plugin) (*pluginClient, error) {
 	cli, err := clientv3.NewFromURL(etcdURL)
 	if err != nil {
 		return nil, err
@@ -277,6 +340,7 @@ func newClient(areaID uint64, plgID, key string) (*pluginClient, error) {
 		protoClient: proto.NewPluginClient(conn),
 		ctx:         ctx,
 		cancel:      cancel,
+		PluginConf:  plgConf,
 	}, nil
 }
 
@@ -308,12 +372,22 @@ func (pc *pluginClient) DeviceDiscover(ctx context.Context, out chan<- DiscoverR
 				logger.Error(err)
 				continue
 			}
+			// 设备是否在线
+			if err = pc.healthCheck(resp.Identity); err != nil {
+				logger.Error(err)
+				continue
+			}
+			if !pc.IsOnline(resp.Identity) {
+				continue
+			}
+
 			device := DiscoverResponse{
 				Identity:     resp.Identity,
 				Model:        resp.Model,
 				Manufacturer: resp.Manufacturer,
-				Name:         fmt.Sprintf("%s_%s_%s", resp.Manufacturer, resp.Model, resp.Identity),
+				Name:         fmt.Sprintf("%s_%s", resp.Manufacturer, resp.Model),
 				PluginID:     pc.pluginID,
+				AuthRequired: resp.AuthRequired,
 			}
 			out <- device
 		}
@@ -323,12 +397,12 @@ func (pc *pluginClient) DeviceDiscover(ctx context.Context, out chan<- DiscoverR
 // HealthCheck 监听设备的在线状态
 func (pc *pluginClient) HealthCheck(identity string) error {
 
-	_, loaded := pc.deviceStatus.LoadOrStore(identity, false)
-	if loaded { // 已经监听了则直接返回
+	_, loaded := pc.deviceLastOnlineTime.Load(identity)
+	if loaded { // 已经监听了则直接返回,防止重复
 		return nil
 	}
 	logger.Debugf("%s start health check...", identity)
-	ticker := time.NewTicker(time.Second * 5)
+	ticker := time.NewTicker(healthCheckInternal)
 	for {
 		select {
 		case <-pc.ctx.Done():
@@ -352,13 +426,35 @@ func (pc *pluginClient) healthCheck(identity string) error {
 	if err != nil {
 		return err
 	}
-	pc.deviceStatus.Store(identity, resp.Online)
+	if resp.Online {
+		pc.deviceLastOnlineTime.Store(identity, time.Now())
+	}
 	return nil
 }
 
 func (pc *pluginClient) IsOnline(identity string) bool {
-	if v, ok := pc.deviceStatus.Load(identity); ok {
-		return v.(bool)
+	if v, ok := pc.deviceLastOnlineTime.Load(identity); ok {
+		lastOnlineTime := v.(time.Time)
+		return lastOnlineTime.Add(offlineTimeout).After(time.Now())
 	}
 	return false
+}
+
+// GetPluginConfig 获取插件配置
+func GetPluginConfig(addr, pluginID string) (config Plugin, err error) {
+	url := fmt.Sprintf("http://%s/api/plugin/%s/config.json", addr, pluginID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	if err = json.Unmarshal(data, &config); err != nil {
+		return
+	}
+	return
 }

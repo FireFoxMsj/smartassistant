@@ -3,15 +3,9 @@ package docker
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	config2 "github.com/zhiting-tech/smartassistant/modules/config"
-	logger "github.com/zhiting-tech/smartassistant/pkg/logger"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
 	"github.com/zhiting-tech/smartassistant/pkg/regex"
 )
 
@@ -32,37 +26,13 @@ func (c *Client) ContainerIsRunningByImage(image string) (isRunning bool, err er
 	return false, nil
 }
 
-// ContainerRunByImage 根据镜像创建容器并运行
-func (c *Client) ContainerRunByImage(image Image) (containerID string, err error) {
+// ContainerRun 根据镜像创建容器并运行
+func (c *Client) ContainerRun(image string, conf container.Config, hostConf container.HostConfig) (containerID string, err error) {
 	ctx := context.Background()
-	config := container.Config{
-		Image: image.RefStr(),
-	}
-	// 映射插件目录到宿主机上
-	source := filepath.Join(config2.GetConf().SmartAssistant.HostRuntimePath,
-		"data", "plugin", image.Name)
-	os.MkdirAll(source, os.ModePerm)
-	target := "/app/data/"
-	logger.Debugf("mount %s to %s", source, target)
 
-	hostConf := container.HostConfig{
-		NetworkMode: "host",
-		AutoRemove:  true, // TODO 服务挂了的话日志会丢失
-		Mounts: []mount.Mount{
-			{Type: mount.TypeBind, Source: source, Target: target},
-		},
-		// 设置容器的logging driver
-		LogConfig: container.LogConfig{
-			Type: "fluentd",
-			Config: map[string]string{
-				"fluentd-address": config2.GetConf().SmartAssistant.FluentdAddress,
-				"tag":             fmt.Sprintf("smartassistant.plugin.%s", image.RefStr()),
-			},
-		},
-	}
-	logger.Info("create container ", image.RefStr())
-	r, err := c.DockerClient.ContainerCreate(ctx, &config, &hostConf,
-		nil, nil, regex.ToSnakeCase(image.Name))
+	logger.Info("create container ", image)
+	r, err := c.DockerClient.ContainerCreate(ctx, &conf, &hostConf,
+		nil, nil, regex.ToSnakeCase(image))
 	if err != nil {
 		logger.Error("ContainerCreateErr", err)
 		return
@@ -77,7 +47,7 @@ func (c *Client) ContainerRunByImage(image Image) (containerID string, err error
 	return
 }
 
-// ContainerStopByImage 停止并删除容器
+// ContainerStopByImage 停止并删除容器 TODO 优化
 func (c *Client) ContainerStopByImage(image string) (err error) {
 
 	ctx := context.Background()
@@ -95,9 +65,10 @@ func (c *Client) ContainerStopByImage(image string) (err error) {
 				return
 			}
 			logger.Debug("container stop", con.ImageID)
+			return
 		}
 	}
-	return nil
+	return
 }
 
 // ContainerRestartByImage 重启容器

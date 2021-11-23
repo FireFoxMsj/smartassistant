@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/websocket"
 	"net/http"
 	"time"
 
@@ -26,12 +27,14 @@ func NewHttpServer(ws gin.HandlerFunc) *HttpServer {
 	r.Use(middleware.AccessLog())
 
 	apiGroup := r.Group("api")
-	r.GET("/ws", middleware.WithScope("user"), middleware.RequireToken, ws)
+	// 注册websocket命令
+	websocket.RegisterCmd()
+	r.GET("/ws", middleware.RequireToken, ws)
 	loadModules(apiGroup)
 	apiGroup.Static(fmt.Sprintf("static/%s/sa", conf.SmartAssistant.ID), "./static")
 
 	// 插件地址
-	apiGroup.Any("/plugin/:plugin/*path", middleware.WithScope("user"), middleware.ProxyToPlugin)
+	apiGroup.Any("/plugin/:plugin/*path", middleware.RequireAccount, middleware.WithScope("user"), middleware.ProxyToPlugin)
 
 	// 插件静态文件
 	apiGroup.Any(fmt.Sprintf("static/%s/plugin/:plugin/*path", conf.SmartAssistant.ID), middleware.ProxyToPlugin)

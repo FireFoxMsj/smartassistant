@@ -7,6 +7,7 @@ import (
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
+	"sort"
 )
 
 // ListUserResp 成员列表接口返回数据
@@ -20,7 +21,6 @@ type ListUserResp struct {
 func ListUser(c *gin.Context) {
 	var (
 		err         error
-		users       []entity.User
 		resp        ListUserResp
 		sessionUser *session.User
 	)
@@ -42,26 +42,57 @@ func ListUser(c *gin.Context) {
 		return
 	}
 
-	resp.IsOwner = entity.IsAreaOwner(sessionUser.UserID)
+	resp.IsOwner = entity.IsOwner(sessionUser.UserID)
 
-	if users, err = entity.GetAreaUsers(sessionUser.AreaID); err != nil {
-		err = errors.Wrap(err, errors.InternalServerErr)
+	userRoles, err := entity.GetUserRoles(sessionUser.AreaID)
+	if err != nil {
 		return
 	}
 
-	resp.UserCount = len(users)
-	resp.Users, err = WrapUser(users)
+	resp.Users, err = WrapUsers(userRoles, sessionUser.AreaID)
+	resp.UserCount = len(resp.Users)
 	return
 
 }
 
-func WrapUser(users []entity.User) (listUsers []entity.UserInfo, err error) {
-	for _, user := range users {
-		listUser, err := WrapUserInfo(user)
-		if err != nil {
-			return nil, err
+func WrapUsers(userRoles []entity.UserRole, areaID uint64) (listUsers []entity.UserInfo, err error) {
+
+	users := make(map[int]entity.UserInfo)
+
+	for _, userRole := range userRoles {
+
+		if v, ok := users[userRole.UserID]; !ok {
+			var userInfo entity.UserInfo
+			userInfo.UserId = userRole.UserID
+			userInfo.Nickname = userRole.User.Nickname
+			userInfo.IsSetPassword = userRole.User.Password != ""
+			userInfo.RoleInfos = []entity.RoleInfo{{ID: userRole.Role.ID, Name: userRole.Role.Name}}
+			users[userRole.UserID] = userInfo
+		} else {
+			roleInfo := entity.RoleInfo{ID: userRole.Role.ID, Name: userRole.Role.Name}
+			v.RoleInfos = append(users[userRole.UserID].RoleInfos, roleInfo)
 		}
-		listUsers = append(listUsers, listUser)
 	}
+
+	for _, user := range users {
+		listUsers = append(listUsers, user)
+	}
+
+	owner, err := entity.GetAreaOwner(areaID)
+	if err != nil {
+		return
+	}
+	ownerInfo := entity.UserInfo{
+		UserId:        owner.ID,
+		RoleInfos:     []entity.RoleInfo{{ID: entity.OwnerRoleID, Name: entity.Owner}},
+		AccountName:   owner.AccountName,
+		Nickname:      owner.Nickname,
+		IsSetPassword: owner.Password != "",
+	}
+	listUsers = append(listUsers, ownerInfo)
+	// 返回的成员列表按照加入家庭的时间正序排序，这里使用UserID进行排序
+	sort.SliceStable(listUsers, func(i, j int) bool {
+		return listUsers[i].UserId < listUsers[j].UserId
+	})
 	return
 }

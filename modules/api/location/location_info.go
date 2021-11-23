@@ -71,7 +71,10 @@ func GetLocationDevice(locationId int, c *gin.Context) (infoDevices []infoDevice
 	if err != nil {
 		return
 	}
-	deviceInfos := device.WrapDevices(c, devices, device.AllDevice)
+	deviceInfos, err := device.WrapDevices(c, devices, device.AllDevice)
+	if err != nil {
+		return
+	}
 	for _, di := range deviceInfos {
 		infoDevices = append(infoDevices, infoDevice{
 			ID:        di.ID,

@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/zhiting-tech/smartassistant/modules/entity"
+	"github.com/zhiting-tech/smartassistant/modules/sadiscover"
+	"github.com/zhiting-tech/smartassistant/modules/supervisor"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -15,8 +18,6 @@ import (
 	"github.com/zhiting-tech/smartassistant/modules/cloud"
 	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/plugin"
-	"github.com/zhiting-tech/smartassistant/modules/sadiscover"
-	"github.com/zhiting-tech/smartassistant/modules/supervisor"
 	"github.com/zhiting-tech/smartassistant/modules/task"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/websocket"
@@ -77,6 +78,10 @@ func main() {
 	if len(conf.SmartCloud.Domain) > 0 && conf.SmartCloud.GRPCPort > 0 && len(conf.SmartAssistant.ID) > 0 {
 		// 启动数据通道
 		go cloud.StartDataTunnel(ctx)
+	}
+
+	if err := entity.InitClient(); err != nil {
+		logger.Panic("init client fail: ", err)
 	}
 
 	logger.Info("SmartAssistant started")

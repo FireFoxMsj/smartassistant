@@ -2,38 +2,20 @@ package device
 
 import (
 	"encoding/json"
-	"strings"
-	"unicode/utf8"
-
-	"github.com/zhiting-tech/smartassistant/modules/plugin"
-	"github.com/zhiting-tech/smartassistant/pkg/logger"
-	plugin2 "github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
-
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
+	"github.com/zhiting-tech/smartassistant/modules/plugin"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
-
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
+	plugin2 "github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
 )
 
-func checkDeviceName(name string) (err error) {
-
-	if name == "" || strings.TrimSpace(name) == "" {
-		err = errors.Wrap(err, status.DeviceNameInputNilErr)
-		return
-	}
-
-	if utf8.RuneCountInString(name) > 20 {
-		err = errors.Wrap(err, status.DeviceNameLengthLimit)
-		return
-	}
-	return
-}
-
-// isPermit 判断用户是否有权限
-func isPermit(c *gin.Context, p types.Permission) bool {
+// IsPermit 判断用户是否有权限
+func IsPermit(c *gin.Context, p types.Permission) bool {
 	u := session.Get(c)
 	return u != nil && entity.JudgePermit(u.UserID, p)
 }
@@ -56,18 +38,23 @@ func ControlPermissions(d entity.Device) ([]types.Permission, error) {
 	return res, nil
 }
 
-// DevicePermissions 根据配置获取设备所有权限
-func DevicePermissions(d entity.Device) (ps []types.Permission, err error) {
-	ps, err = ControlPermissions(d)
+// Permissions 根据配置获取设备所有权限
+func Permissions(d entity.Device) (ps []types.Permission, err error) {
+	ps = append(ps, ManagePermissions(d)...)
+	ps = append(ps, types.NewDeviceUpdate(d.ID))
+
+	if d.Model == types.SaModel {
+		return
+	}
+
+	controlPermission, err := ControlPermissions(d)
 	if err != nil {
 		return
 	}
-	ps = append(ps, types.NewDeviceUpdate(d.ID))
-	// 非SA设备可配置删除设备权限
-	if d.Model != types.SaModel {
-		ps = append(ps, types.NewDeviceDelete(d.ID))
-		ps = append(ps, DeviceManagePermissions(d)...)
-	}
+
+	// 非SA设备可配置删除设备权限,控制设备权限
+	ps = append(ps, controlPermission...)
+	ps = append(ps, types.NewDeviceDelete(d.ID))
 	return
 }
 
@@ -81,19 +68,30 @@ func IsDeviceControlPermit(areaID uint64, userID int, pluginID, identity string,
 	}
 
 	var req plugin2.SetRequest
-	json.Unmarshal(data, &req)
+	if err = json.Unmarshal(data, &req); err != nil {
+		logrus.Errorf("IsDeviceControlPermit unmarshal err: %s", err.Error())
+		return false
+	}
+	up, err := entity.GetUserPermissions(userID)
+	if err != nil {
+		return false
+	}
 	for _, attr := range req.Attributes {
 		logger.Debug(d, attr)
-		if !entity.IsDeviceControlPermitByAttr(userID, d.ID, attr.InstanceID, attr.Attribute) {
+		if !up.IsDeviceAttrControlPermit(d.ID, attr.InstanceID, attr.Attribute) {
 			return false
 		}
 	}
 	return true
 }
 
-// DeviceManagePermissions 设备的管理权限，暂时只有固件升级
-func DeviceManagePermissions(d entity.Device) []types.Permission {
+// ManagePermissions 设备的管理权限
+func ManagePermissions(d entity.Device) []types.Permission {
 	var permissions = make([]types.Permission, 0)
-	permissions = append(permissions, types.NewDeviceManage(d.ID))
+	// TODO 设备的固件升级功能是否能和设备的其他控制属性一样从插件获取？
+	if d.Model == types.SaModel {
+		permissions = append(permissions, types.NewDeviceManage(d.ID, "固件升级", types.FwUpgrade))
+		permissions = append(permissions, types.NewDeviceManage(d.ID, "软件升级", types.SoftwareUpgrade))
+	}
 	return permissions
 }

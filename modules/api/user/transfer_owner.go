@@ -28,7 +28,7 @@ func TransferOwner(c *gin.Context) {
 	}
 
 	// 判断是否是拥有者
-	if !entity.IsAreaOwner(user.UserID) {
+	if !entity.IsOwner(user.UserID) {
 		err = errors.Wrap(err, status.Deny)
 		return
 	}

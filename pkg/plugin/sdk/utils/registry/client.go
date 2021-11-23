@@ -44,7 +44,9 @@ func RegisterService(ctx context.Context, service, addr string) (err error) {
 	}
 	go func() {
 		for {
-			<-kl
+			if _, ok := <-kl; !ok {
+				return
+			}
 		}
 	}()
 

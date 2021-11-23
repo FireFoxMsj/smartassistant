@@ -11,7 +11,7 @@ import (
 )
 
 type restoreReq struct {
-	Name string `json:"name"`
+	FileName string `json:"file_name"`
 }
 
 // Restore 启动恢复
@@ -28,7 +28,7 @@ func Restore(c *gin.Context) {
 		err = errors.Wrap(err, errors.BadRequest)
 		return
 	}
-	err = supervisor.GetManager().StartRestoreJob(req.Name)
+	err = supervisor.GetManager().StartRestoreJob(req.FileName)
 	if err != nil {
 		if os.IsNotExist(err) {
 			err = errors.Wrap(err, status.FileNotExistErr)

@@ -2,18 +2,16 @@ package session
 
 import (
 	errors2 "errors"
-	"time"
-
+	"github.com/gin-gonic/gin"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	"github.com/zhiting-tech/smartassistant/modules/utils/hash"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
+	"gorm.io/gorm"
+	"time"
 )
 
 // LoginReq 用户登录接口请求参数
@@ -49,8 +47,12 @@ func Login(c *gin.Context) {
 }
 
 func (req LoginReq) login(c *gin.Context) (resp LoginResp, err error) {
-	var u entity.User
-	u, err = req.loginWithCookies(c)
+	var (
+		u     entity.User
+		token string
+	)
+
+	u, token, err = req.loginWithCookies(c)
 	if err != nil {
 		return
 	}
@@ -60,14 +62,14 @@ func (req LoginReq) login(c *gin.Context) (resp LoginResp, err error) {
 		AccountName:   u.AccountName,
 		Nickname:      u.Nickname,
 		Phone:         u.Phone,
-		Token:         u.Token,
+		Token:         token,
 		IsSetPassword: u.Password != "",
 	}
 
 	return
 }
 
-func (req *LoginReq) loginWithCookies(c *gin.Context) (u entity.User, err error) {
+func (req *LoginReq) loginWithCookies(c *gin.Context) (u entity.User, token string, err error) {
 	// 判断是否存在该用户
 	u, err = entity.GetUserByAccountName(req.AccountName)
 	if err != nil {
@@ -87,17 +89,25 @@ func (req *LoginReq) loginWithCookies(c *gin.Context) (u entity.User, err error)
 	if err != nil {
 		return
 	}
+
+	// TODO 用户Token使用oauth2生成，后续删除登录接口
+	token, err = oauth.GetSAUserToken(u, c.Request)
+	if err != nil {
+		return
+	}
+
 	// 设置session
 	sessionUser := &session.User{
 		UserID:   u.ID,
 		IsOwner:  area.OwnerID == u.ID,
 		UserName: u.AccountName,
-		Token:    u.Token,
+		Token:    token,
 		LoginAt:  time.Now(),
 		// TODO 过期时间从配置文件中获取
 		ExpiresAt: time.Now().Add(time.Duration(86400) * time.Second),
 		AreaID:    u.AreaID,
 		Option:    nil,
+		Key:       u.Key,
 	}
 	session.Login(c, sessionUser)
 	return

@@ -1,6 +1,10 @@
 package role
 
 import (
+	"fmt"
+	"github.com/sirupsen/logrus"
+	"github.com/zhiting-tech/smartassistant/modules/device"
+	"github.com/zhiting-tech/smartassistant/modules/types"
 	"strconv"
 	"strings"
 
@@ -15,7 +19,7 @@ type rolePermissionsResp struct {
 	Permissions map[string]bool `json:"permissions"`
 }
 
-func (resp *rolePermissionsResp) wrap(ps []Permission, userID int) {
+func (resp *rolePermissionsResp) wrap(ps []Permission, up entity.UserPermissions) {
 	if len(resp.Permissions) == 0 {
 		resp.Permissions = make(map[string]bool)
 	}
@@ -27,8 +31,30 @@ func (resp *rolePermissionsResp) wrap(ps []Permission, userID int) {
 		}
 
 		p := strings.Join(strs, "_")
-		resp.Permissions[p] = entity.JudgePermit(userID, vp)
+		resp.Permissions[p] = up.IsPermit(vp)
 	}
+}
+
+// checkSAUpgradePermission 校验sa的固件升级，软件升级权限
+func (resp *rolePermissionsResp) checkSAUpgragePermission(up entity.UserPermissions) {
+	saDevice, err := entity.GetSaDevice()
+	if err != nil {
+		return
+	}
+	ps, err := device.Permissions(saDevice)
+	if err != nil {
+		return
+	}
+	permissions := wrapPs(ps)
+	for _, permission := range permissions {
+		if permission.Permission.Attribute != types.SoftwareUpgrade && permission.Permission.Attribute != types.FwUpgrade {
+			continue
+		}
+
+		p := fmt.Sprintf("sa_%s", permission.Permission.Attribute)
+		resp.Permissions[p] = up.IsPermit(permission.Permission)
+	}
+
 }
 
 // UserPermissions 用于处理获取用户权限接口的请求
@@ -57,14 +83,21 @@ func UserPermissions(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	resp.wrap(ps.Device, userID)
+	up, err := entity.GetUserPermissions(userID)
+	if err != nil {
+		logrus.Errorf("wrap err: GetUserPermissions error: %s", err.Error())
+		return
+	}
+	resp.wrap(ps.Device, up)
 	for _, v := range ps.DeviceAdvanced.Locations {
 		for _, vv := range v.Devices {
-			resp.wrap(vv.Permissions, userID)
+			resp.wrap(vv.Permissions, up)
 		}
 	}
-	resp.wrap(ps.Area, userID)
-	resp.wrap(ps.Location, userID)
-	resp.wrap(ps.Role, userID)
-	resp.wrap(ps.Scene, userID)
+	resp.wrap(ps.Area, up)
+	resp.wrap(ps.Location, up)
+	resp.wrap(ps.Role, up)
+	resp.wrap(ps.Scene, up)
+	resp.checkSAUpgragePermission(up)
+
 }

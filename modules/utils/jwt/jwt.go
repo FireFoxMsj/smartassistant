@@ -7,7 +7,6 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	orm2 "github.com/zhiting-tech/smartassistant/modules/entity"
-	session2 "github.com/zhiting-tech/smartassistant/modules/utils/session"
 )
 
 var (
@@ -33,17 +32,17 @@ func (c AccessClaims) Valid() error {
 }
 
 // GenerateUserJwt 以用户 token 作为加密串生成 JWT，用户 ID 使用 uid 字段
-func GenerateUserJwt(claims AccessClaims, u *session2.User) (jwtToken string, err error) {
-	if u == nil || len(u.Token) == 0 {
+func GenerateUserJwt(claims AccessClaims, userKey string, uID int) (jwtToken string, err error) {
+	if len(userKey) == 0 {
 		return "", ErrEmptySignedKey
 	}
 
 	if claims.UID == 0 {
-		claims.UID = u.UserID
+		claims.UID = uID
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(u.Token))
+	return token.SignedString([]byte(userKey))
 }
 
 // ValidateUserJwt 校验用户 JWT 的有效性
@@ -64,7 +63,7 @@ func ValidateUserJwt(jwtToken string) (*AccessClaims, error) {
 		if err != nil {
 			return nil, err
 		}
-		return []byte(user.Token), nil
+		return []byte(user.Key), nil
 	})
 	if err != nil {
 		return nil, err

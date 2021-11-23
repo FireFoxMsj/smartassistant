@@ -1,14 +1,13 @@
 package role
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/zhiting-tech/smartassistant/modules/utils/session"
-
+	"github.com/zhiting-tech/smartassistant/modules/device"
 	"sync"
 
-	"github.com/zhiting-tech/smartassistant/modules/api/device"
+	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
+	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
 )
 
@@ -53,11 +52,11 @@ func wrapRolePermissions(role entity.Role, c *gin.Context) (ps Permissions, err 
 // wrapPermissions 根据权限更新配置
 func wrapPermissions(role entity.Role, ps []Permission) {
 	for i, v := range ps {
-		ps[i].Allow = entity.IsPermit(role.ID, v.Permission.Action, v.Permission.Target, v.Permission.Attribute)
+		ps[i].Allow = entity.IsPermit(role.ID, v.Permission.Action, v.Permission.Target, v.Permission.Attribute, entity.GetDB())
 	}
 }
 
-// getPermissionsWithDevices 获取所有可配置的权限(包括设备高级) TODO 缓存设备属性？
+// getPermissionsWithDevices 获取所有可配置的权限(包括设备高级)
 func getPermissionsWithDevices(c *gin.Context) (Permissions, error) {
 
 	locations, err := getLocationsWithDevice(c)
@@ -116,7 +115,7 @@ func getLocationsWithDevice(c *gin.Context) (locations []Location, err error) {
 	for _, d := range devices {
 		go func(d entity.Device) {
 			defer wg.Done()
-			ps, e := device.DevicePermissions(d)
+			ps, e := device.Permissions(d)
 			if e != nil {
 				logger.Error("DevicePermissionsErr:", e.Error())
 				return

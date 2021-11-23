@@ -90,6 +90,34 @@ func (p *Manager) AddDevice(device Device) error {
 	return p.setAttributeNotify(device.Identity())
 }
 
+func (p *Manager) Auth(identity string, params map[string]string) (err error) {
+	d, ok := p.devices.Load(identity)
+	if !ok {
+		err = errors.New("device not exist")
+		return
+	}
+	switch v := d.(type) {
+	case AuthDevice:
+		return v.Auth(params)
+	default:
+		return
+	}
+}
+
+func (p *Manager) Disconnect(identity string, params map[string]string) (err error) {
+	d, ok := p.devices.Load(identity)
+	if !ok {
+		err = errors.New("device not exist")
+		return
+	}
+	switch v := d.(type) {
+	case AuthDevice:
+		return v.RemoveAuthorization(params)
+	default:
+		return
+	}
+}
+
 func (p *Manager) HealthCheck(identity string) bool {
 
 	device, ok := p.devices.Load(identity)
@@ -166,14 +194,32 @@ func (p *Manager) Notify(identity string, instanceID int, attr *utils.Attribute)
 		return nil
 	}
 }
-func (p *Manager) GetAttributes(identity string) (s []Instance, err error) {
+
+func (p *Manager) getDevice(identity string) (d Device, err error) {
 
 	v, ok := p.devices.Load(identity)
 	if !ok {
 		err = errors.New("device not exist")
 		return
 	}
-	device := v.(Device)
+
+	switch vv := v.(type) {
+	case Device:
+		d = vv
+	case AuthDevice:
+		if !vv.IsAuth() {
+			err = errors.New("device not auth yet")
+			return
+		}
+		d = vv
+	}
+	return
+}
+func (p *Manager) GetAttributes(identity string) (s []Instance, err error) {
+	device, err := p.getDevice(identity)
+	if err != nil {
+		return
+	}
 	if err = device.Update(); err != nil { // update value
 		return
 	}
@@ -218,13 +264,10 @@ func (p *Manager) getInstances(device Device) (instances []Instance) {
 }
 func (p *Manager) SetAttribute(identity string, instanceID int, attr string, val interface{}) (err error) {
 
-	v, ok := p.devices.Load(identity)
-	if !ok {
-		err = errors.New("device not exist")
+	device, err := p.getDevice(identity)
+	if err != nil {
 		return
 	}
-
-	device := v.(Device)
 	// parse device
 	d := utils.Parse(device)
 	a := d.GetAttribute(instanceID, attr)

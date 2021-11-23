@@ -47,7 +47,7 @@ func requireBelongsToUser(c *gin.Context) {
 		return
 	}
 
-	if role.IsBelongsToUserArea(user) {
+	if role.AreaID == user.AreaID {
 		c.Next()
 	} else {
 		response.HandleResponse(c, errors.New(status.Deny), nil)

@@ -8,5 +8,5 @@ import (
 
 func InitCloudRouter(r gin.IRouter) {
 	r.POST("cloud/bind", middleware.RequireAccount, bindCloud)
-	r.POST("cloud/migration", AreaMigration)
+	r.POST("cloud/migration", middleware.RequireOwner, AreaMigration)
 }

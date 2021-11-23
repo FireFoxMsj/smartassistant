@@ -2,9 +2,10 @@ package cloud
 
 import (
 	"fmt"
-	setting2 "github.com/zhiting-tech/smartassistant/modules/api/setting"
 	"net/http"
 	"strconv"
+
+	setting2 "github.com/zhiting-tech/smartassistant/modules/api/setting"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/cloud"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
@@ -19,8 +20,8 @@ import (
 
 // bindCloudReq 绑定云端接口请求参数
 type bindCloudReq struct {
-	CloudAreaID string `json:"cloud_area_id"`
 	CloudUserID int    `json:"cloud_user_id"`
+	AccessToken string `json:"access_token"`
 }
 
 type bindCloudResp struct {
@@ -33,6 +34,7 @@ func bindCloud(c *gin.Context) {
 	var (
 		req  bindCloudReq
 		resp bindCloudResp
+		area entity.Area
 		err  error
 	)
 	defer func() {
@@ -47,21 +49,28 @@ func bindCloud(c *gin.Context) {
 	// 建立长连接
 	saID := config.GetConf().SmartAssistant.ID
 	scUrl := config.GetConf().SmartCloud.URL()
-	cloudAreaID, err := strconv.ParseUint(req.CloudAreaID, 10, 64)
 	if err != nil {
 		err = errors.New(errors.BadRequest)
 		return
 	}
+
 	// 更新用户和家庭关系
 	url := fmt.Sprintf("%s/sa/%s/users/%d", scUrl, saID, req.CloudUserID)
 	u := session.Get(c)
 	saDevice, _ := entity.GetSaDevice()
 	body := map[string]interface{}{
-		"area_id":        cloudAreaID,
+		"access_token":   req.AccessToken,
 		"sa_user_id":     u.UserID,
 		"sa_lan_address": saDevice.Address,
 		"sa_area_id":     u.AreaID,
 	}
+
+	area, err = entity.GetAreaByID(u.AreaID)
+	if err != nil {
+		err = errors.Wrap(err, errors.InternalServerErr)
+		return
+	}
+	body["area_name"] = area.Name
 
 	setting := entity.GetDefaultUserCredentialFoundSetting()
 	if err = entity.GetSetting(entity.UserCredentialFoundType, &setting, u.AreaID); err != nil {
@@ -71,7 +80,7 @@ func bindCloud(c *gin.Context) {
 
 	// 判断是否允许找回找回凭证
 	if setting.UserCredentialFound {
-		body["area_token"] = setting2.GetUserCredentialAuthToken()
+		body["area_token"] = setting2.GetUserCredentialAuthToken(u.AreaID)
 	}
 
 	_, err = cloud.CloudRequest(url, http.MethodPost, body)

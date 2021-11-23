@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-var d1 = NewDemo("123")
-var d2 = NewDemo("456")
+var d1 = NewLightBulbDevice("123", "ceiling17")
+var d2 = NewSwitchDevice("456")
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
@@ -23,7 +23,7 @@ func init() {
 
 func TestNewPlugin(t *testing.T) {
 
-	p := server.NewPluginServer("demo")
+	p := server.NewPluginServer()
 
 	go func() {
 		time.Sleep(1 * time.Second)
@@ -99,7 +99,7 @@ func TestListen(t *testing.T) {
 	}()
 }
 
-func ExecCmdPower(cli proto.PluginClient, d *Device, onOff string) {
+func ExecCmdPower(cli proto.PluginClient, d *LightBulbDevice, onOff string) {
 
 	args := server.SetRequest{
 		[]server.SetAttribute{{1, "power", onOff}},

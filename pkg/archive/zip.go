@@ -17,10 +17,6 @@ func UnZip(dst, src string) (err error) {
 		return
 	}
 	var extractedFiles []string
-	defer func() {
-		logrus.Println("extracted files:", extractedFiles)
-		// TODO remove extracted files if error occur
-	}()
 	if dst != "" {
 		if err = os.MkdirAll(dst, 0755); err != nil {
 			return

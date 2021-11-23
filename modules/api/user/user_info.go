@@ -55,10 +55,10 @@ func InfoUser(c *gin.Context) {
 		return
 	}
 
-	resp.IsOwner = entity.IsAreaOwner(userID)
+	resp.IsOwner = entity.IsOwner(userID)
 
 	resp.IsSelf = userID == sessionUser.UserID
-	resp.UserInfo, err = WrapUserInfo(user)
+	resp.UserInfo, err = WrapUserInfo(user, resp.IsOwner)
 	resp.AccountName = user.AccountName
 
 	resp.Area, err = GetArea(user.AreaID)
@@ -66,23 +66,20 @@ func InfoUser(c *gin.Context) {
 	return
 }
 
-func WrapUserInfo(user entity.User) (infoUser entity.UserInfo, err error) {
+func WrapUserInfo(user entity.User, isOwner bool) (infoUser entity.UserInfo, err error) {
 	infoUser.UserId = user.ID
 	infoUser.Nickname = user.Nickname
 	infoUser.IsSetPassword = user.Password != ""
-	infoUser.RoleInfos, err = GetRoleInfo(user.ID)
+
+	if isOwner {
+		infoUser.RoleInfos = []entity.RoleInfo{{ID: entity.OwnerRoleID, Name: entity.Owner}}
+	} else {
+		infoUser.RoleInfos, err = GetRoleInfo(user.ID)
+	}
 	return
 }
 
 func GetRoleInfo(uID int) (roleInfos []entity.RoleInfo, err error) {
-
-	if entity.IsAreaOwner(uID) {
-		roleInfos = append(roleInfos, entity.RoleInfo{
-			ID:   entity.OwnerRoleID,
-			Name: entity.Owner,
-		})
-		return
-	}
 
 	roles, err := entity.GetRolesByUid(uID)
 	if err != nil {

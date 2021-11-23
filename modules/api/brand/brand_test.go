@@ -72,7 +72,7 @@ func TestBrand(t *testing.T) {
 
 	// 启动插件管理
 	m := plugin.GetGlobalManager()
-	m.Load()
+	m.LoadPlugins()
 
 	test.RunApiTest(t, RegisterBrandRouter, cases, test.WithRoles("管理员"))
 

@@ -20,7 +20,7 @@ type User struct {
 	Phone       string    `json:"phone"`
 	Password    string    `json:"password"`
 	Salt        string    `json:"salt"`
-	Token       string    `json:"token" gorm:"uniqueIndex"`
+	Key         string    `json:"key" gorm:"uniqueIndex"`
 	CreatedAt   time.Time `json:"created_at"`
 
 	AreaID  uint64 `gorm:"type:bigint;index"`
@@ -33,7 +33,7 @@ type UserInfo struct {
 	RoleInfos     []RoleInfo `json:"role_infos"`
 	AccountName   string     `json:"account_name"`
 	Nickname      string     `json:"nickname"`
-	Token         string     `json:"token"`
+	Token         string     `json:"token,omitempty"`
 	Phone         string     `json:"phone"`
 	IsSetPassword bool       `json:"is_set_password"`
 }
@@ -50,7 +50,7 @@ func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
 	if u.Nickname == "" {
 		u.Nickname = rand.String(rand.KindAll)
 	}
-	u.Token = hash.GetSaToken()
+	u.Key = hash.GetSaUserKey()
 	u.CreatedAt = time.Now()
 	if u.AreaID == 0 {
 		return errors2.New("user area id is 0")
@@ -63,7 +63,7 @@ func CreateUser(user *User, tx *gorm.DB) (err error) {
 	return
 }
 
-func GetAreaUsers(areaID uint64) (users []User, err error) {
+func GetUsers(areaID uint64) (users []User, err error) {
 	err = GetDBWithAreaScope(areaID).Find(&users).Error
 	return
 }
@@ -132,6 +132,18 @@ func GetUIds(areaID uint64) (ids []int, err error) {
 	if err = GetDBWithAreaScope(areaID).Model(&User{}).Pluck("id", &ids).Error; err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
 		return
+	}
+	return
+}
+
+func GetUserByIDAndAreaID(uID int, areaID uint64) (user User, err error) {
+	err = GetDB().Model(&User{}).First(&user, "id = ? and area_id=?", uID, areaID).Error
+	if err != nil {
+		if errors2.Is(err, gorm.ErrRecordNotFound) {
+			err = errors.Wrap(err, status.UserNotExist)
+		} else {
+			err = errors.Wrap(err, errors.InternalServerErr)
+		}
 	}
 	return
 }

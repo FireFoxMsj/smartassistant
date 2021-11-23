@@ -74,6 +74,8 @@ func (req *UploadPluginReq) uploadPlugin(c *gin.Context) (resp UploadPluginResp,
 	}
 
 	pluginPath := filepath.Join(req.getUploadDir(), req.header.Filename)
+	// 删除插件压缩包
+	defer os.RemoveAll(pluginPath)
 	destFile, err := os.Create(pluginPath)
 	if err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
@@ -92,11 +94,9 @@ func (req *UploadPluginReq) uploadPlugin(c *gin.Context) (resp UploadPluginResp,
 	// 从上传目录中将插件build成镜像
 	plg, err := plugin.LoadPluginFromZip(pluginPath, u.AreaID)
 	if err != nil {
-		err = errors.Wrap(err, errors.InternalServerErr)
+		err = errors.Wrap(err, status.PluginContentIllegal)
 		return
 	}
-	// 删除插件压缩包
-	os.RemoveAll(pluginPath)
 	resp.PluginInfo = plg
 	return
 }

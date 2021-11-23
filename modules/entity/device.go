@@ -2,6 +2,7 @@ package entity
 
 import (
 	errors2 "errors"
+	"gorm.io/gorm/clause"
 	"time"
 
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
@@ -16,18 +17,17 @@ import (
 type Device struct {
 	ID           int       `json:"id"`
 	Name         string    `json:"name"`
-	Address      string    `json:"address"`                                                    // 地址
-	Identity     string    `json:"identity" gorm:"uniqueIndex:area_id_mau_model_identity"`     // 设备唯一值
-	Model        string    `json:"model" gorm:"uniqueIndex:area_id_mau_model_identity"`        // 型号
-	SwVersion    string    `json:"sw_version"`                                                 // 软件版本
-	Manufacturer string    `json:"manufacturer" gorm:"uniqueIndex:area_id_mau_model_identity"` // 制造商
-	Type         string    `json:"type"`                                                       // 设备类型，如：light,switch...
-	PluginID     string    `json:"plugin_id"`
+	Address      string    `json:"address"`                                                // 地址
+	Identity     string    `json:"identity" gorm:"uniqueIndex:area_id_identity_plugin_id"` // 设备唯一值
+	Model        string    `json:"model"`                                                  // 型号
+	Manufacturer string    `json:"manufacturer"`                                           // 制造商
+	Type         string    `json:"type"`                                                   // 设备类型，如：light,switch...
+	PluginID     string    `json:"plugin_id" gorm:"uniqueIndex:area_id_identity_plugin_id"`
 	CreatedAt    time.Time `json:"created_at"`
 	LocationID   int       `json:"location_id"`
 	Deleted      gorm.DeletedAt
 
-	AreaID uint64 `json:"area_id" gorm:"type:bigint;uniqueIndex:area_id_mau_model_identity"`
+	AreaID uint64 `json:"area_id" gorm:"type:bigint;uniqueIndex:area_id_identity_plugin_id"`
 	Area   Area   `gorm:"constraint:OnDelete:CASCADE;"`
 
 	Shadow     datatypes.JSON `json:"-"`
@@ -47,11 +47,6 @@ func (d *Device) AfterDelete(tx *gorm.DB) (err error) {
 func GetDeviceByID(id int) (device Device, err error) {
 	err = GetDB().First(&device, "id = ?", id).Error
 	return
-}
-
-// IsBelongsToUserArea 是否属于用户的家庭
-func (d Device) IsBelongsToUserArea(user User) bool {
-	return user.BelongsToArea(d.AreaID)
 }
 
 func GetDevicesByPluginID(pluginID string) (devices []Device, err error) {
@@ -101,17 +96,6 @@ func GetDevicesByLocationID(locationId int) (devices []Device, err error) {
 	return
 }
 
-// IsAreaOwner 是否是area拥有者
-func IsAreaOwner(userID int) bool {
-	user := &User{}
-	if err := GetDB().Where("id = ?", userID).First(user).Error; err != nil {
-		return false
-	}
-	err := GetDB().Where("owner_id = ? and id = ?", userID, user.AreaID).
-		First(&Area{}).Error
-	return err == nil
-}
-
 func DelDeviceByID(id int) (err error) {
 	d := Device{ID: id}
 	err = GetDB().Delete(&d).Error
@@ -152,53 +136,89 @@ func UnBindLocationDevice(deviceID int) (err error) {
 	return
 }
 
-// IsDeviceExist 设备是否已存在
-func IsDeviceExist(device *Device, tx *gorm.DB) (err error) {
+// CheckDeviceExist 设备是否已存在
+func CheckDeviceExist(device Device, tx *gorm.DB) (err error) {
 	if device.Model == types.SaModel {
 		// sa设备已被绑定，直接返回
 		if err = tx.First(&Device{}, "model = ? and area_id=?", types.SaModel, device.AreaID).Error; err == nil {
-			err = errors.Wrap(err, status.SaDeviceAlreadyBind)
-			return
+			return errors.Wrap(err, status.SaDeviceAlreadyBind)
 		}
 
 	}
-	err = nil
 	filter := Device{
-		Manufacturer: device.Manufacturer,
-		Model:        device.Model,
-		Identity:     device.Identity,
-		AreaID:       device.AreaID,
+		PluginID: device.PluginID,
+		Identity: device.Identity,
 	}
 
-	if err = tx.Unscoped().Where(&filter).First(&device).Error; err != nil {
-		if !errors2.Is(err, gorm.ErrRecordNotFound) {
-			err = errors.Wrap(err, errors.InternalServerErr)
-			return err
-		}
-		err = nil
+	err = tx.Where(&filter).First(&device).Error
+	if errors2.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return errors.Wrap(err, errors.InternalServerErr)
+	}
+	return errors.New(status.DeviceExist)
+}
 
+func AddDevice(d *Device, tx *gorm.DB) (err error) {
+	if err = CheckDeviceExist(*d, tx); err != nil {
 		return
 	}
 
-	if !device.Deleted.Valid {
-		err = errors.New(status.DeviceExist)
-		return err
+	if err = tx.Unscoped().Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "identity"},
+			{Name: "plugin_id"},
+			{Name: "area_id"},
+		},
+		UpdateAll: true,
+	}).Create(d).Error; err != nil {
+		return errors.Wrap(err, errors.InternalServerErr)
+	}
+	filter := Device{
+		AreaID:   d.AreaID,
+		PluginID: d.PluginID,
+		Identity: d.Identity,
+	}
+	d.ID = 0
+	if err = tx.First(d, filter).Error; err != nil {
+		return errors.Wrap(err, errors.InternalServerErr)
 	}
 
-	device.Deleted = gorm.DeletedAt{}
 	return
 }
 
-func AddDevice(device *Device, tx *gorm.DB) (err error) {
-	if err = IsDeviceExist(device, tx); err != nil {
-		return
+// AddSADevice 添加SA设备
+func AddSADevice(device *Device, tx *gorm.DB) (err error) {
+	if device.Model != types.SaModel {
+		return errors2.New("invalid sa")
 	}
 
-	if err = tx.Save(device).Error; err != nil {
-		err = errors.Wrap(err, errors.InternalServerErr)
-		return
+	// 初始化角色
+	err = InitRole(tx, device.AreaID)
+	if err != nil {
+		return err
 	}
 
-	return
+	// 创建SaCreator用户和初始化权限
+	var user User
+	user.AreaID = device.AreaID
+	// 使用同一个db，避免发生锁数据库的问题
+	if err = CreateUser(&user, tx); err != nil {
+		return err
+	}
+	if err = SetAreaOwnerID(device.AreaID, user.ID, tx); err != nil {
+		return err
+	}
 
+	return AddDevice(device, tx)
+}
+
+func GetDeviceByIdentity(identity string) (*Device, error) {
+	var device Device
+	if err := GetDB().Where("identity = ?", identity).First(&device).Error; err != nil {
+		return nil, err
+	}
+
+	return &device, nil
 }

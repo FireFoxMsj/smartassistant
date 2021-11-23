@@ -2,6 +2,7 @@ package user
 
 import (
 	"github.com/zhiting-tech/smartassistant/modules/api/area"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
@@ -48,7 +49,7 @@ func (req *checkQrCodeReq) validateRequest(c *gin.Context) (err error) {
 	// 判断是否是拥有者
 	u := session.Get(c)
 	if u != nil {
-		if entity.IsAreaOwner(u.UserID) {
+		if entity.IsOwner(u.UserID) {
 			err = errors.New(status.OwnerForbidJoinAreaAgain)
 			return
 		}
@@ -140,11 +141,20 @@ func (req *checkQrCodeReq) checkQrCode(c *gin.Context) (resp CheckQrCodeResp, er
 
 	resp.UserInfo = entity.UserInfo{
 		UserId:        user.ID,
-		Token:         user.Token,
 		AccountName:   user.AccountName,
 		Nickname:      user.Nickname,
 		IsSetPassword: user.Password != "",
 		Phone:         user.Phone,
+	}
+
+	if u != nil {
+		resp.UserInfo.Token = u.Token
+	} else {
+		resp.UserInfo.Token, err = oauth.GetSAUserToken(user, c.Request)
+		if err != nil {
+			return
+		}
+
 	}
 
 	resp.AreaInfo = area.Area{

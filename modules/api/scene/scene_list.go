@@ -204,6 +204,10 @@ func WrapCondition(ctx *gin.Context, sceneID, userID int) (sceneCondition sceneC
 		return
 	}
 
+	up, err := entity.GetUserPermissions(userID)
+	if err != nil {
+		return
+	}
 	for i, c := range conditions {
 		// 只返回第一个触发条件的信息
 		sceneCondition.Type = conditions[0].ConditionType
@@ -216,7 +220,7 @@ func WrapCondition(ctx *gin.Context, sceneID, userID int) (sceneCondition sceneC
 				canControlDevice = false
 				return
 			}
-			if !entity.IsDeviceControlPermit(userID, c.DeviceID, conditionItem) {
+			if !up.IsDeviceAttrPermit(c.DeviceID, conditionItem) {
 				canControlDevice = false
 				return
 			}
@@ -318,6 +322,11 @@ func checkControlPermission(c *gin.Context, sceneID int, userID int, checked map
 	if items, err = WrapItems(c, sceneID); err != nil {
 		return
 	}
+	var up entity.UserPermissions
+	up, err = entity.GetUserPermissions(userID)
+	if err != nil {
+		return
+	}
 	for _, item := range items {
 		// 校验执行任务为智能设备时对该设备的控制权限
 		if item.Type == entity.TaskTypeSmartDevice {
@@ -328,7 +337,7 @@ func checkControlPermission(c *gin.Context, sceneID int, userID int, checked map
 			}
 			// 判断设备每一个操作的控制权限
 			for _, device := range item.devices {
-				if !entity.IsDeviceControlPermit(userID, item.ID, device) {
+				if !up.IsDeviceAttrPermit(item.ID, device) {
 					controlPermission = false
 					checked[sceneID] = false
 					return

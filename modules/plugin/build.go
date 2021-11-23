@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"io/ioutil"
 	"os"
@@ -25,46 +24,50 @@ func LoadPluginFromZip(path string, areaID uint64) (plg Plugin, err error) {
 	logrus.Println(dstDir)
 	dstDir, _ = filepath.Abs(dstDir)
 	logrus.Println(dstDir)
-	plg, err = LoadPluginInfo(dstDir)
+	pluginPath := PluginBasePath(dstDir)
+	plgConf, err := LoadPluginConfig(pluginPath)
 	if err != nil {
 		return
 	}
 
 	// save plugin info
-	info, _ := json.Marshal(plg)
+	data, _ := json.Marshal(plgConf)
 	pi := entity.PluginInfo{
-		AreaID:   areaID,
-		PluginID: plg.ID,
-		Info:     info,
-		Version:  plg.Version,
-		Brand:    plg.Brand,
-		Source:   entity.SourceTypeDevelopment,
+		AreaID:    areaID,
+		Image:     plgConf.ID(),
+		Info:      plgConf.Info,
+		PluginID:  plgConf.ID(),
+		ConfigMsg: data,
+		Version:   plgConf.Version,
+		Source:    entity.SourceTypeDevelopment,
 	}
 	if err = entity.SavePluginInfo(pi); err != nil {
 		return
 	}
 
-	plg.AreaID = pi.AreaID
 	// docker build
 	go func() {
 		var err error
 		defer func() {
 			os.RemoveAll(dstDir)
 			var status = entity.StatusInstallSuccess
+			var errInfo string
 			if err != nil {
 				status = entity.StatusInstallFail
+				errInfo = err.Error()
 			}
-			if uerr := entity.UpdatePluginStatus(plg.ID, status); uerr != nil {
+			if uerr := entity.UpdatePluginInfo(plgConf.ID(), entity.PluginInfo{Status: status, ErrorInfo: errInfo}); uerr != nil {
 				logrus.Errorf("UpdatePluginStatus err: %s", uerr.Error())
 			}
 		}()
 
-		_, err = BuildFromDir(dstDir, plg.ID)
+		_, err = BuildFromDir(pluginPath, plgConf.ID())
 		if err != nil {
 			logrus.Errorf("build image err: %v\n", err)
 			return
 		}
 
+		plg = NewFromEntity(pi)
 		if err = plg.Up(); err != nil {
 			logrus.Errorf("up image err: %v\n", err)
 			return
@@ -75,8 +78,8 @@ func LoadPluginFromZip(path string, areaID uint64) (plg Plugin, err error) {
 	return
 }
 
-// LoadPluginInfo 加载插件信息
-func LoadPluginInfo(path string) (plg Plugin, err error) {
+// LoadPluginConfig 加载插件配置
+func LoadPluginConfig(path string) (plg PluginConfig, err error) {
 
 	configFile, err := os.Open(path + "/config.json")
 	if err != nil {
@@ -90,13 +93,20 @@ func LoadPluginInfo(path string) (plg Plugin, err error) {
 	}
 	json.Unmarshal(data, &plg)
 
-	if plg.Brand == "" || plg.ID == "" {
-		err = errors.New("config err")
+	if err = plg.Validate(); err != nil {
 		return
 	}
-	plg.Image = docker.Image{
-		Name: plg.ID,
-	}
+	return
+}
+
+// PluginBasePath 根据配置文件config.json确定插件包准确目录
+func PluginBasePath(path string) (plgPath string) {
+	filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if filepath.Base(path) == "config.json" {
+			plgPath = filepath.Dir(path)
+		}
+		return nil
+	})
 	return
 }
 

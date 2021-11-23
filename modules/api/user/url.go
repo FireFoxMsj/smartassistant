@@ -17,7 +17,7 @@ import (
 
 // RegisterUserRouter 注册与用户相关的路由及其处理函数
 func RegisterUserRouter(r gin.IRouter) {
-	usersGroup := r.Group("/users", middleware.WithScope("user"), middleware.RequireAccount)
+	usersGroup := r.Group("/users", middleware.RequireAccount, middleware.WithScope("user"))
 	usersGroup.GET("", ListUser)
 
 	userGroup := usersGroup.Group(":id", requireSameArea)
@@ -34,7 +34,6 @@ func RegisterUserRouter(r gin.IRouter) {
 	}
 	// 验证码接口，用于第三方云绑定的校验
 	r.POST("verification/code", middleware.RequireAccount, GetVerificationCode)
-	r.GET("users/:id/token", GetToken)
 }
 
 // requireInSameArea 请求用户api需要在同一个家庭下

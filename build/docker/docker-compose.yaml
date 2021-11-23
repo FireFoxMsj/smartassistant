@@ -1,6 +1,13 @@
 version: "3.9"
 
 services:
+  zt-vue:
+    image: docker.yctc.tech/zt-nginx:3.0
+    ports:
+      - 9020:9020
+    volumes:
+      - ../../zt-nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ../../zt-nginx/sc.conf:/etc/nginx/conf.d/sc.conf
   etcd:
     image: bitnami/etcd:3
     environment:

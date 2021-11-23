@@ -6,81 +6,84 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zhiting-tech/smartassistant/modules/config"
+	"github.com/zhiting-tech/smartassistant/modules/cloud"
 
 	"io/fs"
 
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/plugin/docker"
-	"github.com/zhiting-tech/smartassistant/modules/types/status"
-	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
 
 type manager struct {
-	areaID  uint64
-	plugins map[string]*Plugin
-	docker  *docker.Client
+	areaID uint64
+	docker *docker.Client
 }
 
-// Get 获取单个插件信息
-func (m *manager) Get(id string) (*Plugin, error) {
-	if plg, ok := m.plugins[id]; ok {
-		return plg, nil
+// GetPlugin 获取单个插件信息
+func (m *manager) GetPlugin(id string) (p *Plugin, err error) {
+	// TODO 从云端获取，失败则本地获取
+	plg, err := cloud.GetPlugin(id)
+	if err != nil {
+		return
 	}
-	return nil, errors.New(status.PluginDomainNotExist)
+
+	area, err := getCurrentArea()
+	if err != nil {
+		return
+	}
+	p = &Plugin{
+		Name:        plg.Name,
+		ID:          plg.Domain,
+		Image:       plg.Image,
+		Version:     plg.Version,
+		Brand:       plg.Brand,
+		Info:        plg.Intro,
+		DownloadURL: "",
+		Source:      entity.SourceTypeDefault,
+		AreaID:      area.ID,
+	}
+	return
 }
 
 func NewManager() *manager {
 	area, _ := getCurrentArea()
-	return &manager{area.ID, make(map[string]*Plugin), docker.GetClient()}
+	return &manager{area.ID, docker.GetClient()}
 }
 
-// Load 加载插件列表
-func (m *manager) Load() (plugins map[string]*Plugin, err error) {
-
+// LoadPlugins 加载插件列表
+func (m *manager) LoadPlugins() (plugins map[string]*Plugin, err error) {
 	defaultPlugins, err := m.loadDefaultPlugins()
 	if err != nil {
 		return
 	}
+	plugins = make(map[string]*Plugin)
 	for i, plg := range defaultPlugins {
-		defaultPlugins[i].Source = entity.SourceTypeDefault
-		defaultPlugins[i].AreaID = m.areaID
-		m.plugins[plg.ID] = &defaultPlugins[i]
+		plugins[plg.ID] = &defaultPlugins[i]
 	}
-	customPlugins, err := entity.GetDevelopPlugins(m.areaID)
-	if err != nil {
-		return
-	}
-	for _, plg := range customPlugins {
-		var pi Plugin
-		json.Unmarshal(plg.Info, &pi)
-		pi.Image = docker.Image{
-			Name: plg.PluginID,
-		}
-		pi.Source = plg.Source
-		if _, ok := m.plugins[plg.PluginID]; !ok {
-			m.plugins[plg.PluginID] = &pi
-		}
-	}
-
-	return m.plugins, nil
+	return plugins, nil
 }
 
 // loadDefaultPlugins 加载插件列表
 func (m *manager) loadDefaultPlugins() (plugins []Plugin, err error) {
-	plgsFile, err := os.Open(filepath.Join(config.GetConf().SmartAssistant.DataPath(),
-		"smartassistant", "plugins.json"))
-	if err != nil {
-		return
-	}
-	defer plgsFile.Close()
 
-	data, err := ioutil.ReadAll(plgsFile)
+	plgs, err := cloud.GetPlugins()
 	if err != nil {
 		return
 	}
-	if err = json.Unmarshal(data, &plugins); err != nil {
-		return
+
+	for _, plg := range plgs {
+		p := Plugin{
+			Name:        plg.Name,
+			ID:          plg.Domain,
+			Image:       plg.Image,
+			Version:     plg.Version,
+			Brand:       plg.Brand,
+			Info:        plg.Intro,
+			DownloadURL: "",
+			AreaID:      m.areaID,
+			Source:      entity.SourceTypeDefault,
+		}
+		plugins = append(plugins, p)
 	}
 	return
 }

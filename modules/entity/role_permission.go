@@ -2,6 +2,7 @@ package entity
 
 import (
 	"fmt"
+	"gorm.io/gorm"
 
 	"github.com/zhiting-tech/smartassistant/modules/types"
 )
@@ -45,10 +46,31 @@ type Attr struct {
 }
 
 type UserPermissions struct {
-	ps []RolePermission
+	ps      []RolePermission
+	isOwner bool
 }
 
-func (up UserPermissions) IsDeviceControlPermit(deviceID, instanceID int, attr string) bool {
+func (up UserPermissions) IsOwner() bool {
+	return up.isOwner
+}
+
+func (up UserPermissions) IsDeviceControlPermit(deviceID int) bool {
+	if up.isOwner {
+		return true
+	}
+	for _, p := range up.ps {
+		if p.Action == "control" &&
+			p.Target == types.DeviceTarget(deviceID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (up UserPermissions) IsDeviceAttrControlPermit(deviceID, instanceID int, attr string) bool {
+	if up.isOwner {
+		return true
+	}
 	for _, p := range up.ps {
 		if p.Action == "control" &&
 			p.Target == types.DeviceTarget(deviceID) &&
@@ -60,6 +82,9 @@ func (up UserPermissions) IsDeviceControlPermit(deviceID, instanceID int, attr s
 }
 
 func (up UserPermissions) IsDeviceAttrPermit(deviceID int, attr Attribute) bool {
+	if up.isOwner {
+		return true
+	}
 	for _, p := range up.ps {
 		if p.Action == "control" &&
 			p.Target == types.DeviceTarget(deviceID) &&
@@ -69,67 +94,50 @@ func (up UserPermissions) IsDeviceAttrPermit(deviceID int, attr Attribute) bool 
 	}
 	return false
 }
+func (up UserPermissions) IsPermit(tp types.Permission) bool {
+	if up.isOwner {
+		return true
+	}
+	for _, p := range up.ps {
+		if p.Action == tp.Action && p.Target == tp.Target && p.Attribute == tp.Attribute {
+			return true
+		}
+	}
+	return false
+}
 
 // GetUserPermissions 获取用户的所有权限
 func GetUserPermissions(userID int) (up UserPermissions, err error) {
-
-	roleIds, err := GetRoleIdsByUid(userID)
-	if err != nil {
-		return
-	}
 	var ps []RolePermission
-	if err = GetDB().Joins("Role", db.Where("id in ?", roleIds)).
+	if err = GetDB().Scopes(UserRolePermissionsScope(userID)).
 		Find(&ps).Error; err != nil {
 		return
 	}
-	return UserPermissions{ps: ps}, nil
+	return UserPermissions{ps: ps, isOwner: IsOwner(userID)}, nil
 }
 
+func UserRolePermissionsScope(userID int) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Select("role_permissions.*").
+			Joins("inner join roles on roles.id=role_permissions.role_id").
+			Joins("inner join user_roles on user_roles.role_id=roles.id").
+			Where("user_roles.user_id=?", userID)
+	}
+}
 func JudgePermit(userID int, p types.Permission) bool {
 	return judgePermit(userID, p.Action, p.Target, p.Attribute)
 }
 
-// DeviceControlPermit 判断用户是否有设备的任一控制权限
-func DeviceControlPermit(userID, deviceID int) bool {
-	roleIds, err := GetRoleIdsByUid(userID)
-	if err != nil {
-		return false
-	}
-
-	if len(roleIds) == 0 {
-		return false
-	}
-
-	var permissions []RolePermission
-
-	if err := GetDB().Where("role_id in ? and action = ? and target = ?",
-		roleIds, "control", types.DeviceTarget(deviceID)).Find(&permissions).Error; err != nil {
-		return false
-	}
-	if len(permissions) == 0 {
-		return false
-	}
-
-	return true
-}
 func judgePermit(userID int, action, target, attribute string) bool {
 	// SA拥有者默认拥有所有权限
-	if IsAreaOwner(userID) {
+	if IsOwner(userID) {
 		return true
-	}
-	roleIds, err := GetRoleIdsByUid(userID)
-	if err != nil {
-		return false
-	}
-
-	if len(roleIds) == 0 {
-		return false
 	}
 
 	var permissions []RolePermission
-
-	if err := GetDB().Where("role_id in ? and action = ? and target = ? and attribute = ?",
-		roleIds, action, target, attribute).Find(&permissions).Error; err != nil {
+	if err := GetDB().Scopes(UserRolePermissionsScope(userID)).
+		Where("action = ? and target = ? and attribute = ?",
+			action, target, attribute).Find(&permissions).Error; err != nil {
 		return false
 	}
 
@@ -140,19 +148,19 @@ func judgePermit(userID int, action, target, attribute string) bool {
 	return true
 }
 
-func IsPermit(roleID int, action, target, attribute string) bool {
+func IsPermit(roleID int, action, target, attribute string, tx *gorm.DB) bool {
 	p := RolePermission{
 		RoleID:    roleID,
 		Action:    action,
 		Target:    target,
 		Attribute: attribute,
 	}
-	if err := GetDB().First(&p, p).Error; err != nil {
+	if err := tx.First(&p, p).Error; err != nil {
 		return false
 	}
 	return true
 }
 
-func IsDeviceActionPermit(roleID int, action string) bool {
-	return IsPermit(roleID, action, "device", "")
+func IsDeviceActionPermit(roleID int, action string, tx *gorm.DB) bool {
+	return IsPermit(roleID, action, "device", "", tx)
 }

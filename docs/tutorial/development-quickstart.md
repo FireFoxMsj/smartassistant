@@ -16,43 +16,24 @@
 git clone https://github.com/zhiting-tech/smartassistant.git
 ```
 
-同步依赖
+在项目根目录执行以下命令同步依赖
 
 ``` shell
 go mod tidy
 ```
 
-复制 app.yaml.example 到 app.yaml 并配置
+执行以下命令，创建配置文件目录并复制示例配置文件到配置文件目录
 
-``` yaml
-debug: true
-# 智汀云
-smartcloud:
-    # 留空则不连接智汀云
-    domain: ""  
-    tls: false
-# 智汀家庭云
-smartassistant:
-    # 由智汀云分配的ID
-    id: "demo-sa"
-    # 由智汀云分配的设备密钥
-    key: "aGVsbG93b3JsZA"
-    db: "sadb.db"
-    host: 0.0.0.0
-    port: 8088
-    grpc_port: 9234
-
-docker:
-    server: ""
-    username: ""
-    password: ""
-   
+``` shell
+mkdir -p /mnt/data/zt-smartassistant/config
+mkdir -p /mnt/data/zt-smartassistant/data/smartassistant
+cp ./app.yaml.example /mnt/data/zt-smartassistant/config/smartassistant.yaml
 ```
 
 编译运行
 
 ``` shell
-go run ./cmd/smartassistant/main.go 
+go run ./cmd/smartassistant/main.go
 ```
 
 如果已安装 docker 与 docker-compose，则可以通过以下命令进行打包与运行
@@ -65,11 +46,11 @@ make run
 然后可以访问以下地址确认服务是否正常运行
 
 ``` shell
-curl http://localhost:8088/check
+curl http://localhost:37965/api/check
 ```
 
 正常会返回
 
-``` json
-{"status":0,"reason":"成功","data":{"is_bind":false}}
+```json
+{"status":0,"reason":"成功","data":{"is_bind":false,"revision":""}}
 ```

@@ -4,7 +4,7 @@ RUN apk add build-base
 COPY . /app
 WORKDIR /app
 ARG VERSION=latest
-RUN go env -w GOPROXY="goproxy.cn,direct"
+RUN go env -w GOPROXY="http://192.168.0.82:8081,direct"
 # --tags json1 for sqlite json support
 RUN go build --tags json1 -ldflags="-w -s -X 'github.com/zhiting-tech/smartassistant/modules/types.Version=$VERSION'" -o smartassistant cmd/smartassistant/main.go
 

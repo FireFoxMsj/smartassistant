@@ -10,20 +10,36 @@ import (
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
 )
 
+// Manager 与SC服务交互获取插件信息
 type Manager interface {
-	// Load 加载并返回所有插件
-	Load() (map[string]*Plugin, error)
-	Get(id string) (*Plugin, error)
+	// LoadPlugins 加载并返回所有插件
+	LoadPlugins() (map[string]*Plugin, error)
+	// GetPlugin 加载并返回插件
+	GetPlugin(id string) (*Plugin, error)
 }
 
+type DeviceConfig struct {
+	Device
+	PluginID string
+}
+
+// Client 与插件服务交互的客户端
 type Client interface {
 	DevicesDiscover(ctx context.Context) <-chan DiscoverResponse
 	GetAttributes(device entity.Device) (DeviceAttributes, error)
 	SetAttributes(device entity.Device, data json.RawMessage) (result []byte, err error)
 	HealthCheck(entity.Device) error
 	IsOnline(entity.Device) bool
-	Disconnect(entity.Device) error
-	DeviceInfo(entity.Device) Info
+
+	// Connect 连接设备
+	Connect(identity, pluginID string, authParams map[string]string) (DeviceAttributes, error)
+	// Disconnect 与设备断开连接
+	Disconnect(identity, pluginID string, authParams map[string]string) error
+
+	// DeviceConfig 设备的配置
+	DeviceConfig(entity.Device) DeviceConfig
+	// DeviceConfigs 所有设备的配置
+	DeviceConfigs() []DeviceConfig
 }
 
 type Info struct {
@@ -74,7 +90,7 @@ func loadAndUpPlugins(m Manager) {
 
 	logger.Info("starting plugin globalManager")
 	// 加载插件列表
-	plugins, err := m.Load()
+	plugins, err := m.LoadPlugins()
 	if err != nil {
 		return
 	}

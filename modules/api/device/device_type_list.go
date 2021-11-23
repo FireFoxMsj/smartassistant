@@ -36,8 +36,6 @@ func TypeList(c *gin.Context) {
 		response.HandleResponse(c, err, resp)
 	}()
 
-	plgs, err := plugin.GetGlobalManager().Load()
-
 	lightType := Type{
 		Name: "灯",
 		Type: plugin.TypeLight,
@@ -50,26 +48,31 @@ func TypeList(c *gin.Context) {
 		Name: "插座",
 		Type: plugin.TypeOutlet,
 	}
+	deviceConfigs := plugin.GetGlobalClient().DeviceConfigs()
+	if err != nil {
+		return
+	}
 
-	for _, plg := range plgs {
-		for _, d := range plg.SupportDevices {
+	for _, d := range deviceConfigs {
+		if d.Provisioning == "" { //没有配置置网页则忽略
+			continue
+		}
 
-			md := ModelDevice{
-				Name:         d.Name,
-				Model:        d.Model,
-				Logo:         plugin.StaticURL(plg.ID, d.Logo, c.Request), // 根据配置拼接插件中的图片地址
-				Provisioning: d.Provisioning,
-				PluginID:     plg.ID,
-			}
+		md := ModelDevice{
+			Name:         d.Name,
+			Model:        d.Model,
+			Logo:         plugin.StaticURL(d.PluginID, d.Logo, c.Request), // 根据配置拼接插件中的图片地址
+			Provisioning: d.Provisioning,
+			PluginID:     d.PluginID,
+		}
 
-			switch d.Type {
-			case plugin.TypeLight:
-				lightType.Devices = append(lightType.Devices, md)
-			case plugin.TypeSwitch:
-				switchType.Devices = append(switchType.Devices, md)
-			case plugin.TypeOutlet:
-				outletType.Devices = append(outletType.Devices, md)
-			}
+		switch d.Type {
+		case plugin.TypeLight:
+			lightType.Devices = append(lightType.Devices, md)
+		case plugin.TypeSwitch:
+			switchType.Devices = append(switchType.Devices, md)
+		case plugin.TypeOutlet:
+			outletType.Devices = append(outletType.Devices, md)
 		}
 	}
 

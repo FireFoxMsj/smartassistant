@@ -3,6 +3,8 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
+	plugin2 "github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/server"
 	"net/http"
 
 	"github.com/zhiting-tech/smartassistant/modules/config"
@@ -14,45 +16,35 @@ import (
 	"gorm.io/gorm"
 )
 
-// AddDevice 添加设备,并保存物模型和生成设备影子
-func AddDevice(d *entity.Device, tx *gorm.DB) (err error) {
-	// 获取所有属性
-	das, err := GetGlobalClient().GetAttributes(*d)
-	if err != nil {
-		return
-	}
-	// 保存物模型
-	d.ThingModel, err = json.Marshal(das)
-	if err != nil {
-		return
-	}
-
-	// 新建设备影子并更新
-	shadow := entity.NewShadow()
-	for _, ins := range das.Instances {
-		for _, attr := range ins.Attributes {
-			shadow.UpdateReported(ins.InstanceId, attr.Attribute)
-		}
-	}
-	d.Shadow, err = json.Marshal(shadow)
-	if err != nil {
-		return
-	}
-	if err = entity.AddDevice(d, tx); err != nil {
-		return
-	}
-	go GetGlobalClient().HealthCheck(*d)
-	return nil
-}
-
 // RemoveDevice 删除设备,断开相关连接和回收资源
 func RemoveDevice(deviceID int) (err error) {
 	d, err := entity.GetDeviceByID(deviceID)
 	if err != nil {
 		return errors.Wrap(err, errors.InternalServerErr)
 	}
-	if err = GetGlobalClient().Disconnect(d); err != nil {
-		return errors.Wrap(err, errors.InternalServerErr)
+
+	if d.Model == types.SaModel {
+		return errors.New(status.ForbiddenBindOtherSA)
+	}
+
+	// TODO 删除特殊处理
+	if d.PluginID == "homekit" {
+		attributes := []plugin2.SetAttribute{
+			{
+				InstanceID: 1,
+				Attribute:  "pin",
+				Val:        "",
+			},
+		}
+
+		data, _ := json.Marshal(plugin2.SetRequest{Attributes: attributes})
+
+		_, err = GetGlobalClient().SetAttributes(d, data)
+
+	}
+
+	if err = DisconnectDevice(d.Identity, d.PluginID, nil); err != nil {
+		logrus.Error("disconnect err:", err)
 	}
 
 	if err = entity.DelDeviceByID(deviceID); err != nil {
@@ -95,8 +87,14 @@ func UpdateShadowReported(d entity.Device, attr entity.Attribute) (err error) {
 func SetAttributes(areaID uint64, pluginID, identity string, data json.RawMessage) (err error) {
 	d, err := entity.GetPluginDevice(areaID, pluginID, identity)
 	if err != nil {
-		return
+		if err == gorm.ErrRecordNotFound {
+			d = entity.Device{Identity: identity, PluginID: "homekit"}
+			err = nil
+		} else {
+			return
+		}
 	}
+
 	_, err = GetGlobalClient().SetAttributes(d, data)
 	return
 }
@@ -151,6 +149,14 @@ func GetInstanceControlAttributes(instance Instance) (attributes []entity.Attrib
 	return
 }
 
+func ConnectDevice(identity, pluginID string, authParams map[string]string) (das DeviceAttributes, err error) {
+	return GetGlobalClient().Connect(identity, pluginID, authParams)
+}
+
+func DisconnectDevice(identity, pluginID string, authParams map[string]string) error {
+	return GetGlobalClient().Disconnect(identity, pluginID, authParams)
+}
+
 // GetUserDeviceAttributes 获取用户设备的属性(包括权限)
 func GetUserDeviceAttributes(areaID uint64, userID int, pluginID, identity string) (das DeviceAttributes, err error) {
 
@@ -162,9 +168,13 @@ func GetUserDeviceAttributes(areaID uint64, userID int, pluginID, identity strin
 	if err != nil {
 		return
 	}
+	up, err := entity.GetUserPermissions(userID)
+	if err != nil {
+		return
+	}
 	for i, instance := range das.Instances {
 		for j, a := range instance.Attributes {
-			if entity.IsDeviceControlPermitByAttr(userID, device.ID,
+			if up.IsDeviceAttrControlPermit(device.ID,
 				instance.InstanceId, a.Attribute.Attribute) {
 				das.Instances[i].Attributes[j].CanControl = true
 			}
@@ -199,7 +209,7 @@ func LogoURL(req *http.Request, d entity.Device) string {
 	if d.Model == types.SaModel {
 		return url.SAImageUrl(req)
 	}
-	logo := url.ConcatPath(url.StaticPath(), "plugin", d.PluginID, GetGlobalClient().DeviceInfo(d).Logo)
+	logo := url.ConcatPath(url.StaticPath(), "plugin", d.PluginID, GetGlobalClient().DeviceConfig(d).Logo)
 	return url.BuildURL(logo, nil, req)
 }
 
@@ -218,7 +228,7 @@ func PluginURL(d entity.Device, req *http.Request, token string) string {
 		"sa_id":     config.GetConf().SmartAssistant.ID,
 		"plugin_id": d.PluginID,
 	}
-	controlPath := url.ConcatPath(url.StaticPath(), "plugin", d.PluginID, GetGlobalClient().DeviceInfo(d).Control)
+	controlPath := url.ConcatPath(url.StaticPath(), "plugin", d.PluginID, GetGlobalClient().DeviceConfig(d).Control)
 	return url.BuildURL(controlPath, q, req)
 }
 
@@ -237,7 +247,7 @@ func RelativeControlPath(d entity.Device, token string) string {
 		"sa_id":     config.GetConf().SmartAssistant.ID,
 		"plugin_id": d.PluginID,
 	}
-	return fmt.Sprintf("%s?%s", GetGlobalClient().DeviceInfo(d).Control, url.Join(url.BuildQuery(q)))
+	return fmt.Sprintf("%s?%s", GetGlobalClient().DeviceConfig(d).Control, url.Join(url.BuildQuery(q)))
 }
 
 // ArchiveURL 插件的前端压缩包地址

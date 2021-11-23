@@ -1,31 +1,51 @@
 package supervisor
 
 import (
+	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zhiting-tech/smartassistant/modules/config"
+	"github.com/zhiting-tech/smartassistant/modules/types"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/zhiting-tech/smartassistant/modules/plugin/docker"
 
-	"github.com/zhiting-tech/smartassistant/modules/plugin"
-
 	jsoniter "github.com/json-iterator/go"
-
-	"github.com/zhiting-tech/smartassistant/modules/types"
 )
+
+func NewBackupFromFileName(fn string) Backup {
+	var ca time.Time
+	note := strings.TrimRight(fn, ".zip")
+	sps := strings.Split(fn, "-")
+	if len(sps) >= 2 {
+		if tm, err := strconv.ParseInt(sps[0], 10, 64); err == nil {
+			ca = time.Unix(tm, 0)
+			note = strings.TrimRight(strings.Join(sps[1:], "-"), ".zip")
+		}
+	}
+	return Backup{
+		FileName:  fn,
+		Note:      note,
+		CreatedAt: ca,
+	}
+}
 
 // Backup 备份描述文件结构 backup.json
 type Backup struct {
-	Name           string         `json:"name"`
-	Date           time.Time      `json:"date"`
-	SmartAssistant SmartAssistant `json:"smartassistant"`
-	Plugins        []Plugin       `json:"plugins"`
+	FileName       string          `json:"file_name"`
+	Note           string          `json:"note"`
+	CreatedAt      time.Time       `json:"created_at"`
+	SmartAssistant *SmartAssistant `json:"smartassistant,omitempty"`
+	Plugins        []Plugin        `json:"plugins,omitempty"`
 }
 
 type SmartAssistant struct {
@@ -42,29 +62,33 @@ func (s SmartAssistant) RefStr() string {
 }
 
 type Plugin struct {
-	ID      string       `json:"id"`
-	Brand   string       `json:"brand"`
-	Image   docker.Image `json:"image"`
-	Version string       `json:"version"`
+	ID      string `json:"id"`
+	Brand   string `json:"brand"`
+	Image   string `json:"image"`
+	Version string `json:"version"`
 }
 
-func newBackup(name string) *Backup {
+func newBackup(note string) *Backup {
 	var plugins []Plugin
-	if plgs, err := plugin.GetGlobalManager().Load(); err == nil {
+	if plgs, err := entity.GetInstalledPlugins(); err == nil {
 		plugins = make([]Plugin, 0, len(plgs))
 		for _, plg := range plgs {
 			plugins = append(plugins, Plugin{
-				ID:      plg.ID,
+				ID:      plg.PluginID,
 				Brand:   plg.Brand,
 				Image:   plg.Image,
 				Version: plg.Version,
 			})
 		}
 	}
+	tn := time.Now()
+	re := regexp.MustCompile(`[<>:"/\\|?*\x00-\x1F]`)
+	fn := re.ReplaceAllString(fmt.Sprintf("%d-%s.zip", tn.Unix(), note), "_")
 	return &Backup{
-		Name: name,
-		Date: time.Now(),
-		SmartAssistant: SmartAssistant{
+		FileName:  fn,
+		Note:      note,
+		CreatedAt: tn,
+		SmartAssistant: &SmartAssistant{
 			Version: types.Version,
 		},
 		Plugins: plugins,
@@ -114,19 +138,19 @@ func (b *Backup) writeBackupJson(dir string) (err error) {
 // 导出 smart assistant 以及插件的镜像
 func (b *Backup) backupImages(target string) (err error) {
 	cli := docker.GetClient()
-	plgs, err := plugin.GetGlobalManager().Load()
+	plgs, err := entity.GetInstalledPlugins()
 	if err != nil {
 		return
 	}
-	imgs := make([]docker.Image, 0, len(plgs)+1)
-	imgs = append(imgs, saImage)
+	imgs := make([]string, 0, len(plgs)+1)
+	imgs = append(imgs, saImage.RefStr())
 	for _, plg := range plgs {
 		imgs = append(imgs, plg.Image)
 	}
 	for _, img := range imgs {
-		if !cli.IsImageAdd(img.RefStr()) {
-			logrus.Infof("image %v not added, pulling", img.RefStr())
-			if err = cli.Pull(img.RefStr()); err != nil {
+		if !cli.IsImageAdd(img) {
+			logrus.Infof("image %v not added, pulling", img)
+			if err = cli.Pull(img); err != nil {
 				return
 			}
 		}

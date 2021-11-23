@@ -11,4 +11,8 @@ func RegisterBrandRouter(r gin.IRouter) {
 	brandGroup := r.Group("brands", middleware.RequireAccount)
 	brandGroup.GET("", List)
 	brandGroup.GET(":name", Info)
+
+	// 插件的安装、更新、删除
+	brandGroup.POST(":brand_name/plugins", UpdatePlugin)
+	brandGroup.DELETE(":brand_name/plugins", DelPlugins)
 }

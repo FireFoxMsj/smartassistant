@@ -34,12 +34,7 @@ func RegisterLocationRouter(r gin.IRouter) {
 
 // requireBelongsToUser 操作房间需要房间属于用户的家庭
 func requireBelongsToUser(c *gin.Context) {
-	user, err := entity.GetUserByID(session.Get(c).UserID)
-	if err != nil {
-		response.HandleResponse(c, errors.Wrap(err, errors.InternalServerErr), nil)
-		c.Abort()
-		return
-	}
+	user := session.Get(c)
 
 	locationID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -54,7 +49,7 @@ func requireBelongsToUser(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	if location.IsBelongsToUserArea(user) {
+	if location.AreaID == user.AreaID {
 		c.Next()
 	} else {
 		response.HandleResponse(c, errors.New(status.Deny), nil)

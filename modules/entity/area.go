@@ -84,7 +84,7 @@ func GetAreaByID(id uint64) (area Area, err error) {
 	return
 }
 
-func GetAreaResultById(id uint64)(area Area, err error) {
+func GetAreaResultById(id uint64) (area Area, err error) {
 	err = GetDB().First(&area, "id = ?", id).Error
 	return
 }
@@ -112,7 +112,36 @@ func UpdateArea(id uint64, name string) (err error) {
 	return
 }
 
-func SetAreaOwnerID(id uint64, ownerID int, tx *gorm.DB) (err error){
-	err = tx.First(&Area{},"id = ?", id).Update("owner_id", ownerID).Error
+func SetAreaOwnerID(id uint64, ownerID int, tx *gorm.DB) (err error) {
+	err = tx.First(&Area{}, "id = ?", id).Update("owner_id", ownerID).Error
 	return
+}
+
+// IsOwner 是否是area拥有者
+func IsOwner(userID int) bool {
+	var count int64
+	GetDB().Model(&User{}).Where(User{ID: userID}).
+		Joins("inner join areas on users.area_id=areas.id and areas.owner_id=users.id").
+		Count(&count)
+	return count > 0
+}
+
+// IsOwnerOfArea 是否是area拥有者
+func IsOwnerOfArea(userID int, areaID uint64) bool {
+	var count int64
+	GetDB().Model(&User{}).Where(User{ID: userID}).
+		Joins("inner join areas on users.area_id=areas.id and areas.owner_id=users.id").
+		Where(Area{ID: areaID}).
+		Count(&count)
+	return count > 0
+}
+
+// GetAreaOwner 获取家庭的拥有者
+func GetAreaOwner(areaID uint64) (user User, err error) {
+
+	area, err := GetAreaByID(areaID)
+	if err != nil {
+		return
+	}
+	return GetUserByID(area.OwnerID)
 }

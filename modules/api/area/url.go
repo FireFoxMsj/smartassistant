@@ -16,14 +16,14 @@ import (
 
 // RegisterAreaRouter 用于注册与家庭相关的路由及其处理函数
 func RegisterAreaRouter(r gin.IRouter) {
-	areasGroup := r.Group("areas", middleware.WithScope("area"), middleware.RequireAccount)
+	areasGroup := r.Group("areas", middleware.RequireAccount, middleware.WithScope("area"))
 	areasGroup.GET("", ListArea)
 
 	areaGroup := areasGroup.Group(":id", requireBelongsToUser)
 	areaGroup.PUT("", middleware.RequirePermission(types.AreaUpdateName), UpdateArea)
 	areaGroup.DELETE("", middleware.RequireOwner, DelArea)
 	areaGroup.GET("", InfoArea)
-	areaGroup.DELETE("/users/:user_id", middleware.RequireAccount, QuitArea)
+	areaGroup.DELETE("/users/:user_id", QuitArea)
 
 	r.POST("/sync", middleware.RequireOwner, DataSync)
 }

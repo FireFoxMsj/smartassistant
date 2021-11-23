@@ -40,7 +40,7 @@ func GetVerificationCode(c *gin.Context) {
 	}
 
 	// 校验用户是否是拥有者
-	if !entity.IsAreaOwner(user.UserID) {
+	if !entity.IsOwner(user.UserID) {
 		err = errors.New(status.Deny)
 		return
 	}

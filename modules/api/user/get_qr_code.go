@@ -84,7 +84,7 @@ func (req getInvitationCodeReq) getInvitationCode(c *gin.Context) (resp getInvit
 		Exp:     time.Now().Add(expireAt).Unix(),
 	}
 
-	resp.QRCode, err = jwt2.GenerateUserJwt(claims, u)
+	resp.QRCode, err = jwt2.GenerateUserJwt(claims, u.Key, u.UserID)
 	if err != nil {
 		err = errors.Wrap(err, status.GetQRCodeErr)
 	}

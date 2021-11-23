@@ -21,9 +21,9 @@ var (
 
 // Stage 阶段过程描述
 type Stage struct {
-	dir        string
-	Value      StageVal `json:"value"`
-	BackupName string   `json:"backup_name"`
+	dir   string
+	Value StageVal `json:"value"`
+	Note  string   `json:"note"` // for backup and restore
 }
 
 func NewStage(dir string, val StageVal) *Stage {

@@ -141,8 +141,12 @@ func getDeviceAttributes(userID int, device entity.Device) (as []entity.Attribut
 	if err != nil {
 		return
 	}
+	up, err := entity.GetUserPermissions(userID)
+	if err != nil {
+		return
+	}
 	for _, attr := range attributes {
-		if !entity.IsDeviceControlPermit(userID, device.ID, attr) {
+		if !up.IsDeviceAttrPermit(device.ID, attr) {
 			continue
 		}
 		as = append(as, attr)

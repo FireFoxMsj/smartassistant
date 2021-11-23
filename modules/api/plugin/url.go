@@ -10,6 +10,8 @@ func RegisterPluginRouter(r gin.IRouter) {
 	pluginGroup := r.Group("plugins")
 	pluginAuthGroup := pluginGroup.Use(middleware.RequireAccount)
 
-	pluginGroup.GET(":id", PluginInfo)
+	pluginGroup.GET(":id", GetPluginInfo)
+	pluginAuthGroup.GET("", ListPlugin)
 	pluginAuthGroup.POST("", UploadPlugin)
+	pluginAuthGroup.DELETE(":id", DelPlugin)
 }

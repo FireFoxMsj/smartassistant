@@ -32,7 +32,7 @@ func QuitArea(c *gin.Context) {
 		return
 	}
 
-	if entity.IsAreaOwner(sessionUser.UserID) {
+	if entity.IsOwner(sessionUser.UserID) {
 		err = errors.Wrap(err, status.OwnerQuitErr)
 		return
 	}

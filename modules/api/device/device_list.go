@@ -79,7 +79,7 @@ func ListAllDevice(c *gin.Context) {
 		return
 	}
 
-	resp.Devices = WrapDevices(c, devices, req.Type)
+	resp.Devices, err = WrapDevices(c, devices, req.Type)
 	return
 }
 
@@ -112,18 +112,23 @@ func ListLocationDevices(c *gin.Context) {
 		return
 	}
 
-	resp.Devices = WrapDevices(c, devices, req.Type)
+	resp.Devices, err = WrapDevices(c, devices, req.Type)
 	return
 
 }
 
-func WrapDevices(c *gin.Context, devices []entity.Device, listType listType) (result []Device) {
+func WrapDevices(c *gin.Context, devices []entity.Device, listType listType) (result []Device, err error) {
 
 	u := session.Get(c)
+	up, err := entity.GetUserPermissions(u.UserID)
+	if err != nil {
+		return
+	}
+
 	for _, d := range devices {
 
 		if !u.IsOwner { // 拥有者默认拥有所有权限不是拥有者则判断控制权限
-			if listType == ControlDevice && !entity.DeviceControlPermit(u.UserID, d.ID) {
+			if listType == ControlDevice && !up.IsDeviceControlPermit(d.ID) {
 				continue
 			}
 		}
@@ -132,7 +137,7 @@ func WrapDevices(c *gin.Context, devices []entity.Device, listType listType) (re
 			ID:         d.ID,
 			Identity:   d.Identity,
 			Name:       d.Name,
-			Logo:       plugin.GetGlobalClient().DeviceInfo(d).Logo,
+			Logo:       plugin.GetGlobalClient().DeviceConfig(d).Logo,
 			LogoURL:    plugin.LogoURL(c.Request, d),
 			LocationID: d.LocationID,
 			Type:       d.Type,
@@ -151,5 +156,5 @@ func WrapDevices(c *gin.Context, devices []entity.Device, listType listType) (re
 
 	}
 
-	return result
+	return
 }

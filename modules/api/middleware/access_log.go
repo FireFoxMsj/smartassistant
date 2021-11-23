@@ -50,7 +50,7 @@ func AccessLog() gin.HandlerFunc {
 		// 非json请求和响应（屏蔽上传或者下载）
 		if strings.HasPrefix(c.Request.RequestURI,"/api/static") ||
 			c.Writer.Header().Get("Content-Type") != "application/json; charset=utf-8" ||
-			c.Request.Header.Get("Content-Type") == "multipart/form-data" {
+			strings.Contains(c.Request.Header.Get("Content-Type"),"multipart/form-data") {
 
 			request = ""
 			response = ""

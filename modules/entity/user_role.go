@@ -52,11 +52,20 @@ func DelUserRoleByUid(userId int, db *gorm.DB) (err error) {
 	return
 }
 
-
-func UnScopedDelURoleByUid(userID int) (err error){
+func UnScopedDelURoleByUid(userID int) (err error) {
 	err = db.Unscoped().Where("user_id=?", userID).Delete(&UserRole{}).Error
 	if err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
 	}
+	return
+}
+
+// GetUserRoles 获取家庭下所有用户的角色
+func GetUserRoles(areaID uint64) (userRoles []UserRole, err error) {
+	err = GetDB().Model(UserRole{}).Where("users.area_id=?", areaID).
+		Joins("inner join users on user_roles.user_id=users.id").
+		Joins("inner join roles on user_roles.role_id=roles.id").
+		Preload("User").Preload("Role").Find(&userRoles).Error
+
 	return
 }

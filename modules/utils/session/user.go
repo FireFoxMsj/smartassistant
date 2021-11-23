@@ -3,11 +3,12 @@ package session
 import (
 	"encoding/gob"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
+	"strconv"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 const sessionName = "user"
@@ -23,6 +24,7 @@ type User struct {
 	ExpiresAt     time.Time              `json:"expires_at"`
 	AreaID        uint64                 `json:"area_id"`
 	Option        map[string]interface{} `json:"option"`
+	Key           string
 }
 
 func (u User) BelongsToArea(areaID uint64) bool {
@@ -47,10 +49,13 @@ func Logout(c *gin.Context) {
 
 // Get 根据token或cookie获取用户数据
 func Get(c *gin.Context) *User {
+	if u, exists := c.Get("userInfo"); exists {
+		return u.(*User)
+	}
 	var u *User
 	token := c.GetHeader(types.SATokenKey)
 	if token != "" {
-		return GetUserByToken(c)
+		u = GetUserByToken(c)
 	} else {
 		// token 为空，则检查cookie
 		s := GetSession(c)
@@ -66,26 +71,33 @@ func Get(c *gin.Context) *User {
 		if time.Now().After(u.ExpiresAt) || time.Now().Before(u.LoginAt) {
 			return nil
 		}
-		return u
 	}
+	c.Set("userInfo", u)
+	return u
 }
 
 func GetUserByToken(c *gin.Context) *User {
-	token := c.GetHeader(types.SATokenKey)
-	user, err := entity.GetUserByToken(token)
+	accessToken := c.GetHeader(types.SATokenKey)
+	ti, err := oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
 	if err != nil {
 		return nil
 	}
+
+	uid, _ := strconv.Atoi(ti.GetUserID())
+	user, _ := entity.GetUserByID(uid)
+
 	area, err := entity.GetAreaByID(user.AreaID)
 	if err != nil {
 		return nil
 	}
+
 	u := &User{
-		UserID:   user.ID,
+		UserID:   uid,
 		UserName: user.AccountName,
-		Token:    token,
+		Token:    accessToken,
 		AreaID:   user.AreaID,
-		IsOwner:  area.ID == user.AreaID,
+		IsOwner:  area.OwnerID == user.ID,
+		Key:      user.Key,
 	}
 	return u
 }

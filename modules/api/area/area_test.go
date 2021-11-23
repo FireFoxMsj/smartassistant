@@ -15,7 +15,7 @@ func TestArea(t *testing.T) {
 	test.CreateRecord(&entity.Area{Name: "demo"})
 	test.CreateRecord(&entity.Area{Name: "demo2"})
 	area := test.GetAreas()
-	test.CreateRecord(&entity.Device{Name: "demo2",Model: types.SaModel,OwnerID: 2, AreaID: area[1].ID})
+	test.CreateRecord(&entity.Device{Name: "demo2", Model: types.SaModel, AreaID: area[1].ID})
 
 	areaID := strconv.FormatUint(area[0].ID, 10)
 	areaID2 := strconv.FormatUint(area[1].ID, 10)
@@ -117,7 +117,7 @@ func TestArea(t *testing.T) {
 		// 用户已退出当前area
 		{
 			Method: "DELETE",
-			Path:   "/areas/" +areaID2 + "/users/2",
+			Path:   "/areas/" + areaID2 + "/users/2",
 			Status: status.Deny,
 		},
 	}
